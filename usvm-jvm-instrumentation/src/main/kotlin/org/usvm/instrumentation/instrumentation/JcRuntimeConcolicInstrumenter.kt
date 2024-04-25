@@ -24,13 +24,25 @@ class JcRuntimeConcolicInstrumenter(
                 val instructionsForExpressionFlags = resolveExpressionFlags(encodedInst, rawJcInstruction.rhv)
                 instrumentedInstructionsList.insertBefore(rawJcInstruction, instructionsForExpressionFlags)
 
-                val assignFlagsInstruction = when (val lhv = rawJcInstruction.lhv) {
+                val lhv = rawJcInstruction.lhv
+                val assignFlagsInstruction = when (lhv) {
                     is JcRawLocalVar -> createAssignFlagsToLocalVariableCall(lhv)
                     is JcRawArgument -> createAssignFlagsToArgumentCall(lhv)
                     is JcRawArrayAccess -> TODO()
                     is JcRawFieldRef -> TODO()
                     is JcRawConstant, is JcRawThis ->
                         throw IllegalStateException("Variable expected as lhv of assign instruction")
+                }
+
+                // we can access value only after it initialization
+                val nextInstruction = instrumentedInstructionsList.lookup(rawJcInstruction, 1)
+                if (nextInstruction is JcRawCallInst) {
+                    val callExpr = nextInstruction.callExpr as? JcRawSpecialCallExpr
+                    if (callExpr?.instance == lhv) {
+                        // TODO: remove listOf call after JacoDB update
+                        instrumentedInstructionsList.insertAfter(nextInstruction, listOf(assignFlagsInstruction))
+                        return
+                    }
                 }
 
                 // TODO: remove listOf call after JacoDB update
@@ -112,4 +124,9 @@ class JcRuntimeConcolicInstrumenter(
     // TODO: use index property from new version of JacoDB
     private val JcRawLocalVar.index: Int
         get() = name.drop(1).toInt()
+
+    private fun JcMutableInstList<JcRawInst>.lookup(current: JcRawInst, index: Int): JcRawInst? {
+        val elementIndex = indexOf(current) + index
+        return if (elementIndex < size) get(elementIndex) else null
+    }
 }
