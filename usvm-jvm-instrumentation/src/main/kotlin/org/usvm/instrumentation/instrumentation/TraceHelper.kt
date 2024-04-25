@@ -1,12 +1,10 @@
 package org.usvm.instrumentation.instrumentation
 
 import org.jacodb.api.JcClasspath
-import org.jacodb.api.cfg.JcRawCallInst
-import org.jacodb.api.cfg.JcRawStaticCallExpr
-import org.jacodb.api.cfg.JcRawValue
+import org.jacodb.api.cfg.*
 import org.jacodb.api.ext.long
 import org.jacodb.api.ext.objectType
-import org.jacodb.impl.cfg.JcRawLong
+import org.jacodb.impl.cfg.*
 import org.jacodb.impl.features.classpaths.virtual.JcVirtualClassImpl
 import org.jacodb.impl.features.classpaths.virtual.JcVirtualMethod
 import org.jacodb.impl.features.classpaths.virtual.JcVirtualMethodImpl
@@ -74,6 +72,35 @@ class TraceHelper(
         )
     }
 
+    fun createOnEnterCallMethodCall() = createStaticCall("onEnterCall")
+
+    fun createOnExitCallMethodCall() = createStaticCall("onExitCall")
+
+    fun createApplyFlagsFromLocalVariableMethodCall(jcInstId: Long, index: Int) =
+        createStaticCall("applyFlagsFromLocalVariable", JcRawLong(jcInstId), JcRawInt(index))
+
+    fun createApplyFlagsFromArgumentMethodCall(jcInstId: Long, index: Int) =
+        createStaticCall("applyFlagsFromArgument", JcRawLong(jcInstId), JcRawInt(index))
+
+    fun createApplyFlagsFromThisMethodCall(jcInstId: Long) =
+        createStaticCall("applyFlagsFromThis", JcRawLong(jcInstId))
+
+    fun createAssignFlagsToPrimitiveLocalVariableMethodCall(variableIndex: Int) =
+        createStaticCall("assignFlagsToPrimitiveLocalVariable", JcRawInt(variableIndex))
+
+    fun createAssignFlagsToReferenceLocalVariableMethodCall(variableIndex: Int, localVariable: JcRawLocalVar) =
+        createStaticCall("assignFlagsToReferenceLocalVariable", JcRawInt(variableIndex), localVariable)
+
+    fun createAssignFlagsToPrimitiveArgumentMethodCall(argumentIndex: Int) =
+        createStaticCall("assignFlagsToPrimitiveArgument", JcRawInt(argumentIndex))
+
+    fun createAssignFlagsToReferenceArgumentMethodCall(argumentIndex: Int, argument: JcRawArgument) =
+        createStaticCall("assignFlagsToReferenceArgument", JcRawInt(argumentIndex), argument)
+
+    fun createAssignFlagsToThisMethodCall(thisAccess: JcRawThis) =
+        createStaticCall("assignFlagsToThis", thisAccess)
+
+
     fun createStaticExprWithLongArg(arg: Long, jcTraceMethod: JcVirtualMethod): JcRawStaticCallExpr {
         val argAsJcConst = JcRawLong(arg)
         return JcRawStaticCallExpr(
@@ -85,5 +112,16 @@ class TraceHelper(
         )
     }
 
+    private fun createStaticCall(methodName: String, vararg args: JcRawValue): JcRawCallInst {
+        val method = jcVirtualGlobalObjectClass.declaredMethods.find { it.name == methodName }!!
+        val callExpr = JcRawStaticCallExpr(
+            declaringClass = jcVirtualGlobalObjectClass.typename,
+            methodName = method.name,
+            argumentTypes = method.parameters.map { it.type },
+            returnType = method.returnType,
+            args = args.toList()
+        )
 
+        return JcRawCallInst(method, callExpr)
+    }
 }

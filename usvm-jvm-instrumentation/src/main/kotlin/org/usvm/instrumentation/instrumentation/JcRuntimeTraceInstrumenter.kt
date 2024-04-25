@@ -16,14 +16,14 @@ import org.usvm.instrumentation.util.replace
  * Class for runtime instrumentation for jcdb instructions
  * Collecting trace and information about static access
  */
-class JcRuntimeTraceInstrumenter(
+open class JcRuntimeTraceInstrumenter(
     override val jcClasspath: JcClasspath
 ) : JcInstrumenter, AbstractFullRawExprSetCollector() {
 
     private val rawStaticsGet = hashSetOf<JcRawFieldRef>()
     private val rawStaticsSet = hashSetOf<JcRawFieldRef>()
 
-    private val traceHelper = TraceHelper(jcClasspath, TraceCollector::class.java)
+    private val traceHelper by lazy { TraceHelper(jcClasspath, TraceCollector::class.java) }
     private val coveredInstructionMethodName = "jcInstructionCovered"
     private val staticFieldAccessedMethodName = "jcStaticFieldAccessed"
 
@@ -45,30 +45,41 @@ class JcRuntimeTraceInstrumenter(
         if (expr is JcRawFieldRef && expr.instance == null) rawStaticsGet.add(expr)
     }
 
+    open fun processInstruction(
+        encodedInst: Long,
+        rawJcInstruction: JcRawInst,
+        instrumentedInstructionsList: JcMutableInstList<JcRawInst>
+    ) {
+        val invocation = traceHelper.createTraceMethodCall(encodedInst, coveredInstructionMethodName)
+        instrumentedInstructionsList.insertBefore(rawJcInstruction, invocation)
+
+        getStaticFieldRefs(rawJcInstruction)
+        rawStaticsSet.forEach { jcRawFieldRef ->
+            val encodedRef = JcInstructionTracer.encodeStaticFieldAccess(
+                jcRawFieldRef, StaticFieldAccessType.SET, jcClasspath
+            )
+            val traceMethodCall = traceHelper.createTraceMethodCall(encodedRef, staticFieldAccessedMethodName)
+            instrumentedInstructionsList.insertBefore(rawJcInstruction, traceMethodCall)
+        }
+        rawStaticsGet.forEach { jcRawFieldRef ->
+            val encodedRef = JcInstructionTracer.encodeStaticFieldAccess(
+                jcRawFieldRef, StaticFieldAccessType.GET, jcClasspath
+            )
+            val traceMethodCall = traceHelper.createTraceMethodCall(encodedRef, staticFieldAccessedMethodName)
+            instrumentedInstructionsList.insertBefore(rawJcInstruction, traceMethodCall)
+        }
+    }
+
+    open fun atMethodStart(jcMethod: JcMethod, instrumentedInstructionsList: JcMutableInstList<JcRawInst>) {}
+
     private fun instrumentMethod(jcMethod: JcMethod): MethodNode {
         val rawJcInstructionsList = jcMethod.rawInstList.filter { it !is JcRawLabelInst && it !is JcRawLineNumberInst }
         val jcInstructionsList = jcMethod.instList
         val instrumentedJcInstructionsList = jcMethod.rawInstList.toMutableList()
+        atMethodStart(jcMethod, instrumentedJcInstructionsList)
         for (i in jcInstructionsList.indices) {
             val encodedInst = JcInstructionTracer.encode(jcInstructionsList[i])
-            val invocation = traceHelper.createTraceMethodCall(encodedInst, coveredInstructionMethodName)
-            instrumentedJcInstructionsList.insertBefore(rawJcInstructionsList[i], invocation)
-
-            getStaticFieldRefs(rawJcInstructionsList[i])
-            rawStaticsSet.forEach { jcRawFieldRef ->
-                val encodedRef = JcInstructionTracer.encodeStaticFieldAccess(
-                    jcRawFieldRef, StaticFieldAccessType.SET, jcClasspath
-                )
-                val traceMethodCall = traceHelper.createTraceMethodCall(encodedRef, staticFieldAccessedMethodName)
-                instrumentedJcInstructionsList.insertBefore(rawJcInstructionsList[i], traceMethodCall)
-            }
-            rawStaticsGet.forEach { jcRawFieldRef ->
-                val encodedRef = JcInstructionTracer.encodeStaticFieldAccess(
-                    jcRawFieldRef, StaticFieldAccessType.GET, jcClasspath
-                )
-                val traceMethodCall = traceHelper.createTraceMethodCall(encodedRef, staticFieldAccessedMethodName)
-                instrumentedJcInstructionsList.insertBefore(rawJcInstructionsList[i], traceMethodCall)
-            }
+            processInstruction(encodedInst, rawJcInstructionsList[i], instrumentedJcInstructionsList)
         }
         return MethodNodeBuilder(jcMethod, instrumentedJcInstructionsList).build()
     }

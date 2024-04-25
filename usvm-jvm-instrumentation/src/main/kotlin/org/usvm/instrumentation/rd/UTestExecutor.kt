@@ -5,6 +5,7 @@ import org.jacodb.api.JcField
 import org.jacodb.api.ext.findClass
 import org.jacodb.api.ext.toType
 import org.usvm.instrumentation.classloader.WorkerClassLoader
+import org.usvm.instrumentation.collector.trace.ConcolicCollector
 import org.usvm.instrumentation.collector.trace.MockCollector
 import org.usvm.instrumentation.collector.trace.TraceCollector
 import org.usvm.instrumentation.instrumentation.JcInstructionTracer
@@ -46,6 +47,7 @@ class UTestExecutor(
             traceCollectorClassLoader = this::class.java.classLoader,
             traceCollectorClassName = TraceCollector::class.java.name,
             mockCollectorClassName = MockCollector::class.java.name,
+            concolicCollectorClassName = ConcolicCollector::class.java.name,
             jcClasspath = jcClasspath
         )
 
