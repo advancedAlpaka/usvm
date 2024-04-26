@@ -66,6 +66,21 @@ public class ConcolicCollector {
         updateCallStackFrameIfNeeded(fieldFlags, isThisArgument, parameterIndex);
     }
 
+    public static void applyFlagsFromArrayAccess(long jcInstructionId, Object arrayInstance, int index,
+                                                 boolean isThisArgument, int parameterIndex) {
+        updateLastInstructionIfNeeded(jcInstructionId);
+        Byte elementFlags = null;
+        HeapObjectDescriptor objectDescriptor = heapFlags.get(System.identityHashCode(arrayInstance));
+        if (objectDescriptor != null) {
+            elementFlags = objectDescriptor.arrayElements.get(index);
+        }
+        if (elementFlags == null) {
+            elementFlags = 0;
+        }
+        expressionFlagsBuffer |= elementFlags;
+        updateCallStackFrameIfNeeded(elementFlags, isThisArgument, parameterIndex);
+    }
+
     private static void updateLastInstructionIfNeeded(long jcInstructionId) {
         if (lastInstruction == null || lastInstruction != jcInstructionId) {
             lastInstruction = jcInstructionId;
@@ -103,6 +118,16 @@ public class ConcolicCollector {
         }
     }
 
+    public static void assignFlagsToArray(Object arrayInstance, int index) {
+        int heapRef = System.identityHashCode(arrayInstance);
+        HeapObjectDescriptor objectDescriptor = heapFlags.get(heapRef);
+        if (objectDescriptor == null) {
+            objectDescriptor = new HeapObjectDescriptor();
+        }
+        objectDescriptor.arrayElements.put(index, expressionFlagsBuffer);
+        heapFlags.put(heapRef, objectDescriptor);
+    }
+
     public static class InstructionInfo {
         public long jcInstructionId;
         public ArrayList<ConcreteArgument> concreteArguments;
@@ -131,6 +156,7 @@ public class ConcolicCollector {
 
     private static class HeapObjectDescriptor {
         private final HashMap<String, Byte> fields = new HashMap<>();
+        private final HashMap<Integer, Byte> arrayElements = new HashMap<>();
     }
 
     public static class ArrayList<T> {

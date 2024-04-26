@@ -23,7 +23,7 @@ class JcRuntimeConcolicInstrumenter(
                 val assignFlagsInstruction = when (val lhv = rawJcInstruction.lhv) {
                     is JcRawLocalVar -> concolicInfoHelper.createAssignFlagsToLocalVariableMethodCall(lhv.index)
                     is JcRawArgument -> concolicInfoHelper.createAssignFlagsToArgumentMethodCall(lhv.index)
-                    is JcRawArrayAccess -> TODO()
+                    is JcRawArrayAccess -> concolicInfoHelper.createAssignFlagsToArrayMethodCall(lhv)
                     is JcRawFieldRef -> concolicInfoHelper.createAssignFlagsToFieldMethodCall(lhv)
                     is JcRawConstant, is JcRawThis ->
                         throw IllegalStateException("Variable expected as lhv of assign instruction")
@@ -55,7 +55,9 @@ class JcRuntimeConcolicInstrumenter(
             is JcRawBinaryExpr -> resolveExpressionFlags(encodedInst, expr.lhv) +
                         resolveExpressionFlags(encodedInst, expr.rhv)
             is JcRawArrayAccess -> resolveExpressionFlags(encodedInst, expr.array) +
-                    resolveExpressionFlags(encodedInst, expr.index)
+                    resolveExpressionFlags(encodedInst, expr.index) +
+                    concolicInfoHelper.createApplyFlagsFromArrayAccessMethodCall(encodedInst, expr,
+                        isThisArgument, parameterIndex)
 
             is JcRawInstanceExpr -> resolveExpressionFlags(encodedInst, expr.instance, true) +
                     expr.args.withIndex()

@@ -91,6 +91,11 @@ class TraceHelper(
         createStaticCall("applyFlagsFromField", JcRawLong(jcInstId), fieldRef.instance ?: JcRawNull(),
             fieldRef.fieldId, JcRawBool(isThisArgument), JcRawInt(parameterIndex))
 
+    fun createApplyFlagsFromArrayAccessMethodCall(jcInstId: Long, arrayAccess: JcRawArrayAccess,
+                                            isThisArgument: Boolean, parameterIndex: Int) =
+        createStaticCall("applyFlagsFromArrayAccess", JcRawLong(jcInstId), arrayAccess.array,
+            arrayAccess.index, JcRawBool(isThisArgument), JcRawInt(parameterIndex))
+
     fun createApplyFlagsFromThisMethodCall(jcInstId: Long, isThisArgument: Boolean, parameterIndex: Int) =
         createStaticCall("applyFlagsFromThis", JcRawLong(jcInstId),
             JcRawBool(isThisArgument), JcRawInt(parameterIndex))
@@ -103,6 +108,9 @@ class TraceHelper(
 
     fun createAssignFlagsToFieldMethodCall(fieldRef: JcRawFieldRef) =
         createStaticCall("assignFlagsToField", fieldRef.instance ?: JcRawNull(), fieldRef.fieldId)
+
+    fun createAssignFlagsToArrayMethodCall(arrayAccess: JcRawArrayAccess) =
+        createStaticCall("assignFlagsToArray", arrayAccess.array, arrayAccess.index)
 
     fun createStaticExprWithLongArg(arg: Long, jcTraceMethod: JcVirtualMethod): JcRawStaticCallExpr {
         val argAsJcConst = JcRawLong(arg)
