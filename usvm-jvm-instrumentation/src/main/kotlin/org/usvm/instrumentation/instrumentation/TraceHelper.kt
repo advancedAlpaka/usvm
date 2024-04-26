@@ -76,30 +76,33 @@ class TraceHelper(
 
     fun createOnExitCallMethodCall() = createStaticCall("onExitCall")
 
-    fun createApplyFlagsFromLocalVariableMethodCall(jcInstId: Long, index: Int) =
-        createStaticCall("applyFlagsFromLocalVariable", JcRawLong(jcInstId), JcRawInt(index))
+    fun createApplyFlagsFromLocalVariableMethodCall(jcInstId: Long, index: Int,
+                                                    isThisArgument: Boolean, parameterIndex: Int) =
+        createStaticCall("applyFlagsFromLocalVariable", JcRawLong(jcInstId), JcRawInt(index),
+            JcRawBool(isThisArgument), JcRawInt(parameterIndex))
 
-    fun createApplyFlagsFromArgumentMethodCall(jcInstId: Long, index: Int) =
-        createStaticCall("applyFlagsFromArgument", JcRawLong(jcInstId), JcRawInt(index))
+    fun createApplyFlagsFromArgumentMethodCall(jcInstId: Long, index: Int,
+                                               isThisArgument: Boolean, parameterIndex: Int) =
+        createStaticCall("applyFlagsFromArgument", JcRawLong(jcInstId), JcRawInt(index),
+            JcRawBool(isThisArgument), JcRawInt(parameterIndex))
 
-    fun createApplyFlagsFromThisMethodCall(jcInstId: Long) =
-        createStaticCall("applyFlagsFromThis", JcRawLong(jcInstId))
+    fun createApplyFlagsFromFieldMethodCall(jcInstId: Long, fieldRef: JcRawFieldRef,
+                                               isThisArgument: Boolean, parameterIndex: Int) =
+        createStaticCall("applyFlagsFromField", JcRawLong(jcInstId), fieldRef.instance ?: JcRawNull(),
+            fieldRef.fieldId, JcRawBool(isThisArgument), JcRawInt(parameterIndex))
 
-    fun createAssignFlagsToPrimitiveLocalVariableMethodCall(variableIndex: Int) =
-        createStaticCall("assignFlagsToPrimitiveLocalVariable", JcRawInt(variableIndex))
+    fun createApplyFlagsFromThisMethodCall(jcInstId: Long, isThisArgument: Boolean, parameterIndex: Int) =
+        createStaticCall("applyFlagsFromThis", JcRawLong(jcInstId),
+            JcRawBool(isThisArgument), JcRawInt(parameterIndex))
 
-    fun createAssignFlagsToReferenceLocalVariableMethodCall(variableIndex: Int, localVariable: JcRawLocalVar) =
-        createStaticCall("assignFlagsToReferenceLocalVariable", JcRawInt(variableIndex), localVariable)
+    fun createAssignFlagsToLocalVariableMethodCall(variableIndex: Int) =
+        createStaticCall("assignFlagsToLocalVariable", JcRawInt(variableIndex))
 
-    fun createAssignFlagsToPrimitiveArgumentMethodCall(argumentIndex: Int) =
-        createStaticCall("assignFlagsToPrimitiveArgument", JcRawInt(argumentIndex))
+    fun createAssignFlagsToArgumentMethodCall(argumentIndex: Int) =
+        createStaticCall("assignFlagsToArgument", JcRawInt(argumentIndex))
 
-    fun createAssignFlagsToReferenceArgumentMethodCall(argumentIndex: Int, argument: JcRawArgument) =
-        createStaticCall("assignFlagsToReferenceArgument", JcRawInt(argumentIndex), argument)
-
-    fun createAssignFlagsToThisMethodCall(thisAccess: JcRawThis) =
-        createStaticCall("assignFlagsToThis", thisAccess)
-
+    fun createAssignFlagsToFieldMethodCall(fieldRef: JcRawFieldRef) =
+        createStaticCall("assignFlagsToField", fieldRef.instance ?: JcRawNull(), fieldRef.fieldId)
 
     fun createStaticExprWithLongArg(arg: Long, jcTraceMethod: JcVirtualMethod): JcRawStaticCallExpr {
         val argAsJcConst = JcRawLong(arg)
@@ -124,4 +127,7 @@ class TraceHelper(
 
         return JcRawCallInst(method, callExpr)
     }
+
+    private val JcRawFieldRef.fieldId: JcRawStringConstant
+        get() = JcRawString(if (instance == null) toString() else fieldName)
 }

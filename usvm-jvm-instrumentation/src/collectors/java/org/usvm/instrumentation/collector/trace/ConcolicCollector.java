@@ -3,36 +3,67 @@ package org.usvm.instrumentation.collector.trace;
 public class ConcolicCollector {
     public static final ArrayList<InstructionInfo> symbolicInstructionsTrace = new ArrayList<>();
     private static final ArrayList<StackFrame> stackValuesFlags = new ArrayList<>();
-    private static final IntKeyHashMap<Byte> heapFlags = new IntKeyHashMap<>();
+    private static final HashMap<Integer, HeapObjectDescriptor> heapFlags = new HashMap<>();
+    private static final HashMap<String, Byte> staticFieldsFlags = new HashMap<>();
+
 
     private static Long lastInstruction;
     private static byte expressionFlagsBuffer;
 
 
+    private static StackFrame newCallStackFrame = new StackFrame();
     public static void onEnterCall() {
-        stackValuesFlags.add(new StackFrame());
+        stackValuesFlags.add(newCallStackFrame);
+        newCallStackFrame = new StackFrame();
     }
 
     public static void onExitCall() {
         stackValuesFlags.removeLast();
     }
 
-    public static void applyFlagsFromLocalVariable(long jcInstructionId, int variableIndex) {
+    public static void applyFlagsFromLocalVariable(long jcInstructionId, int variableIndex,
+                                                   boolean isThisArgument, int parameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
-        StackVariableDescriptor variableDescriptor = stackValuesFlags.last().localVariables.get(variableIndex);
-        if (variableDescriptor != null) {
-            expressionFlagsBuffer |= variableDescriptor.getFlags();
+        Byte variableFlags = stackValuesFlags.last().localVariables.get(variableIndex);
+        if (variableFlags == null) {
+            variableFlags = 0;
         }
+        expressionFlagsBuffer |= variableFlags;
+        updateCallStackFrameIfNeeded(variableFlags, isThisArgument, parameterIndex);
     }
 
-    public static void applyFlagsFromArgument(long jcInstructionId, int argumentIndex) {
+    public static void applyFlagsFromArgument(long jcInstructionId, int argumentIndex,
+                                              boolean isThisArgument, int parameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
-        expressionFlagsBuffer |= stackValuesFlags.last().arguments.get(argumentIndex).getFlags();
+        Byte argumentFlags = stackValuesFlags.last().arguments.get(argumentIndex);
+        expressionFlagsBuffer |= argumentFlags;
+        updateCallStackFrameIfNeeded(argumentFlags, isThisArgument, parameterIndex);
     }
 
-    public static void applyFlagsFromThis(long jcInstructionId) {
+    public static void applyFlagsFromThis(long jcInstructionId, boolean isThisArgument, int parameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
-        expressionFlagsBuffer |= stackValuesFlags.last().thisDescriptor.getFlags();
+        Byte thisFlags = stackValuesFlags.last().thisDescriptor;
+        expressionFlagsBuffer |= thisFlags;
+        updateCallStackFrameIfNeeded(thisFlags, isThisArgument, parameterIndex);
+    }
+
+    public static void applyFlagsFromField(long jcInstructionId, Object instance, String fieldId,
+                                           boolean isThisArgument, int parameterIndex) {
+        updateLastInstructionIfNeeded(jcInstructionId);
+        Byte fieldFlags = null;
+        if (instance == null) {
+            fieldFlags = staticFieldsFlags.get(fieldId);
+        } else {
+            HeapObjectDescriptor objectDescriptor = heapFlags.get(System.identityHashCode(instance));
+            if (objectDescriptor != null) {
+                fieldFlags = objectDescriptor.fields.get(fieldId);
+            }
+        }
+        if (fieldFlags == null) {
+            fieldFlags = 0;
+        }
+        expressionFlagsBuffer |= fieldFlags;
+        updateCallStackFrameIfNeeded(fieldFlags, isThisArgument, parameterIndex);
     }
 
     private static void updateLastInstructionIfNeeded(long jcInstructionId) {
@@ -42,35 +73,34 @@ public class ConcolicCollector {
         }
     }
 
-    public static void assignFlagsToPrimitiveLocalVariable(int variableIndex) {
-        stackValuesFlags.last().localVariables.put(variableIndex, createDescriptorForValue());
+    private static void updateCallStackFrameIfNeeded(Byte flags, boolean isThisArgument, int parameterIndex) {
+        if (isThisArgument) {
+            newCallStackFrame.thisDescriptor = flags;
+        } else if (parameterIndex != -1) {
+            newCallStackFrame.arguments.put(parameterIndex, flags);
+        }
     }
 
-    public static void assignFlagsToReferenceLocalVariable(int variableIndex, Object localVariableContent) {
-        stackValuesFlags.last().localVariables.put(variableIndex, createDescriptorForReference(localVariableContent));
+    public static void assignFlagsToLocalVariable(int variableIndex) {
+        stackValuesFlags.last().localVariables.put(variableIndex, expressionFlagsBuffer);
     }
 
-    public static void assignFlagsToPrimitiveArgument(int argumentIndex) {
-        stackValuesFlags.last().arguments.put(argumentIndex, createDescriptorForValue());
+    public static void assignFlagsToArgument(int argumentIndex) {
+        stackValuesFlags.last().arguments.put(argumentIndex, expressionFlagsBuffer);
     }
 
-    public static void assignFlagsToReferenceArgument(int argumentIndex, Object argumentContent) {
-        stackValuesFlags.last().arguments.put(argumentIndex, createDescriptorForReference(argumentContent));
-    }
-
-    public static void assignFlagsToThis(Object thisContent) {
-        stackValuesFlags.last().thisDescriptor = createDescriptorForReference(thisContent);
-    }
-
-    private static StackVariableDescriptor createDescriptorForReference(Object content) {
-        int heapReference = System.identityHashCode(content);
-        heapFlags.put(heapReference, expressionFlagsBuffer);
-
-        return StackVariableDescriptor.forReference(heapReference);
-    }
-
-    private static StackVariableDescriptor createDescriptorForValue() {
-        return StackVariableDescriptor.forValue(expressionFlagsBuffer);
+    public static void assignFlagsToField(Object instance, String fieldId) {
+        if (instance == null) {
+            staticFieldsFlags.put(fieldId, expressionFlagsBuffer);
+        } else {
+            int heapRef = System.identityHashCode(instance);
+            HeapObjectDescriptor objectDescriptor = heapFlags.get(heapRef);
+            if (objectDescriptor == null) {
+                objectDescriptor = new HeapObjectDescriptor();
+            }
+            objectDescriptor.fields.put(fieldId, expressionFlagsBuffer);
+            heapFlags.put(heapRef, objectDescriptor);
+        }
     }
 
     public static class InstructionInfo {
@@ -94,37 +124,13 @@ public class ConcolicCollector {
     }
 
     private static class StackFrame {
-        IntKeyHashMap<StackVariableDescriptor> arguments = new IntKeyHashMap<>();
-        IntKeyHashMap<StackVariableDescriptor> localVariables = new IntKeyHashMap<>();
-        StackVariableDescriptor thisDescriptor;
+        HashMap<Integer, Byte> arguments = new HashMap<>();
+        HashMap<Integer, Byte> localVariables = new HashMap<>();
+        Byte thisDescriptor;
     }
 
-    private static class StackVariableDescriptor {
-        private final int heapReference;
-        private final byte valueFlags;
-        private final boolean isReference;
-
-        private StackVariableDescriptor(int heapReference, byte valueFlags, boolean isReference) {
-            this.heapReference = heapReference;
-            this.valueFlags = valueFlags;
-            this.isReference = isReference;
-        }
-
-        static StackVariableDescriptor forReference(int heapReference) {
-            return new StackVariableDescriptor(heapReference, (byte) 0, true);
-        }
-
-        static StackVariableDescriptor forValue(byte flags) {
-            return new StackVariableDescriptor(0, flags, false);
-        }
-
-        byte getFlags() {
-            if (isReference) {
-                Byte heapFlagsContent = heapFlags.get(heapReference);
-                return heapFlagsContent == null ? 0 : heapFlagsContent;
-            }
-            return valueFlags;
-        }
+    private static class HeapObjectDescriptor {
+        private final HashMap<String, Byte> fields = new HashMap<>();
     }
 
     public static class ArrayList<T> {
@@ -178,50 +184,50 @@ public class ConcolicCollector {
         }
     }
 
-    public static class IntKeyHashMap<V> {
+    public static class HashMap<K, V> {
         private static final int DEFAULT_CAPACITY = 16;
         private static final double LOAD_FACTOR = 0.75;
 
-        private Entry<V>[] table;
+        private Entry<K, V>[] table;
         private int size = 0;
 
         @SuppressWarnings({"unchecked", "rawtypes"})
-        public IntKeyHashMap() {
+        public HashMap() {
             this.table = new Entry[DEFAULT_CAPACITY];
         }
 
-        static class Entry <V> {
-            int key;
+        static class Entry <K, V> {
+            K key;
             V value;
-            Entry<V> next;
+            Entry<K, V> next;
 
-            Entry(int key, V value) {
+            Entry(K key, V value) {
                 this.key = key;
                 this.value = value;
                 this.next = null;
             }
         }
 
-        public void put(int key, V value) {
+        public void put(K key, V value) {
             if (size >= table.length * LOAD_FACTOR) {
                 resize();
             }
 
             int index = getIndex(key);
-            Entry<V> entry = table[index];
+            Entry<K, V> entry = table[index];
 
             if (entry == null) {
                 table[index] = new Entry<>(key, value);
                 size++;
             } else {
                 while (entry.next != null) {
-                    if (entry.key == key) {
+                    if (entry.key.equals(key)) {
                         entry.value = value;
                         return;
                     }
                     entry = entry.next;
                 }
-                if (entry.key == key) {
+                if (entry.key.equals(key)) {
                     entry.value = value;
                 } else {
                     entry.next = new Entry<>(key, value);
@@ -230,12 +236,12 @@ public class ConcolicCollector {
             }
         }
 
-        public V get(int key) {
+        public V get(K key) {
             int index = getIndex(key);
-            Entry<V> entry = table[index];
+            Entry<K, V> entry = table[index];
 
             while (entry != null) {
-                if (entry.key == key) {
+                if (entry.key.equals(key)) {
                     return entry.value;
                 }
                 entry = entry.next;
@@ -244,17 +250,19 @@ public class ConcolicCollector {
             return null;
         }
 
-        private int getIndex(int key) {
-            return key % table.length;
+        private int getIndex(K key) {
+            int h;
+            int hash = (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
+            return (table.length - 1) & hash;
         }
 
         @SuppressWarnings({"unchecked", "rawtypes"})
         private void resize() {
-            Entry<V>[] oldTable = table;
+            Entry<K, V>[] oldTable = table;
             table = new Entry[table.length * 2];
             size = 0;
 
-            for (Entry<V> entry : oldTable) {
+            for (Entry<K, V> entry : oldTable) {
                 while (entry != null) {
                     put(entry.key, entry.value);
                     entry = entry.next;
