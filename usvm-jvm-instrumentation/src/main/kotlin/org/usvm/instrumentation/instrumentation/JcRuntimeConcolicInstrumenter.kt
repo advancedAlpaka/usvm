@@ -17,8 +17,8 @@ class JcRuntimeConcolicInstrumenter(
     ) {
         when (rawJcInstruction) {
             is JcRawAssignInst -> {
-                val instructionsForExpressionFlags = resolveExpressionFlags(encodedInst, rawJcInstruction.rhv)
-                instrumentedInstructionsList.insertBefore(rawJcInstruction, instructionsForExpressionFlags)
+                insertResolveOperandsFlagsInstructions(encodedInst, listOf(rawJcInstruction.lhv),
+                    instrumentedInstructionsList, rawJcInstruction)
 
                 val assignFlagsInstruction = when (val lhv = rawJcInstruction.lhv) {
                     is JcRawLocalVar -> concolicInfoHelper.createAssignFlagsToLocalVariableMethodCall(lhv.index)
@@ -38,14 +38,38 @@ class JcRuntimeConcolicInstrumenter(
                     )
                 }
             }
+
+            is JcRawCallInst -> {
+                insertResolveOperandsFlagsInstructions(encodedInst, rawJcInstruction.operands,
+                    instrumentedInstructionsList, rawJcInstruction)
+
+                instrumentedInstructionsList.insertBefore(
+                    rawJcInstruction, concolicInfoHelper.createOnEnterCallMethodCall()
+                )
+            }
+
             is JcRawReturnInst -> {
-                // TODO also process instruction operands
-                val onExitCall = concolicInfoHelper.createOnExitCallMethodCall()
-                instrumentedInstructionsList.insertBefore(rawJcInstruction, onExitCall)
+                insertResolveOperandsFlagsInstructions(encodedInst, rawJcInstruction.operands,
+                    instrumentedInstructionsList, rawJcInstruction)
+
+                instrumentedInstructionsList.insertBefore(
+                    rawJcInstruction, concolicInfoHelper.createOnExitCallMethodCall()
+                )
             }
-            else -> {
-                // TODO
+
+            is JcRawIfInst,
+            is JcRawSwitchInst,
+            is JcRawThrowInst,
+            is JcRawCatchInst,
+            is JcRawEnterMonitorInst,
+            is JcRawExitMonitorInst -> {
+                insertResolveOperandsFlagsInstructions(encodedInst, rawJcInstruction.operands,
+                    instrumentedInstructionsList, rawJcInstruction)
             }
+
+            is JcRawGotoInst,
+            is JcRawLineNumberInst,
+            is JcRawLabelInst -> {}
         }
     }
 
@@ -87,6 +111,16 @@ class JcRuntimeConcolicInstrumenter(
             is JcRawConstant -> emptyList()
             is JcRawNewExpr -> emptyList()
         }
+    }
+
+    private fun insertResolveOperandsFlagsInstructions(
+        encodedInst: Long,
+        operands: List<JcRawExpr>,
+        instrumentedInstructionsList: JcMutableInstList<JcRawInst>,
+        rawJcInstruction: JcRawInst
+    ) {
+        val resolveExpressionsFlags = operands.flatMap { resolveExpressionFlags(encodedInst, it) }
+        instrumentedInstructionsList.insertBefore(rawJcInstruction, resolveExpressionsFlags)
     }
 
     // TODO: use index property from new version of JacoDB

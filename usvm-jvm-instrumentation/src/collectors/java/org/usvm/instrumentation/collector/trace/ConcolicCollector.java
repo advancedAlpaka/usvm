@@ -25,26 +25,29 @@ public class ConcolicCollector {
                                                    boolean isThisArgument, int parameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
         Byte variableFlags = stackValuesFlags.last().localVariables.get(variableIndex);
-        if (variableFlags == null) {
-            variableFlags = 0;
+        if (variableFlags != null) {
+            expressionFlagsBuffer |= variableFlags;
+            updateCallStackFrameIfNeeded(variableFlags, isThisArgument, parameterIndex);
         }
-        expressionFlagsBuffer |= variableFlags;
-        updateCallStackFrameIfNeeded(variableFlags, isThisArgument, parameterIndex);
     }
 
     public static void applyFlagsFromArgument(long jcInstructionId, int argumentIndex,
                                               boolean isThisArgument, int parameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
         Byte argumentFlags = stackValuesFlags.last().arguments.get(argumentIndex);
-        expressionFlagsBuffer |= argumentFlags;
-        updateCallStackFrameIfNeeded(argumentFlags, isThisArgument, parameterIndex);
+        if (argumentFlags != null) {
+            expressionFlagsBuffer |= argumentFlags;
+            updateCallStackFrameIfNeeded(argumentFlags, isThisArgument, parameterIndex);
+        }
     }
 
     public static void applyFlagsFromThis(long jcInstructionId, boolean isThisArgument, int parameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
         Byte thisFlags = stackValuesFlags.last().thisDescriptor;
-        expressionFlagsBuffer |= thisFlags;
-        updateCallStackFrameIfNeeded(thisFlags, isThisArgument, parameterIndex);
+        if (thisFlags != null) {
+            expressionFlagsBuffer |= thisFlags;
+            updateCallStackFrameIfNeeded(thisFlags, isThisArgument, parameterIndex);
+        }
     }
 
     public static void applyFlagsFromField(long jcInstructionId, Object instance, String fieldId,
@@ -59,11 +62,10 @@ public class ConcolicCollector {
                 fieldFlags = objectDescriptor.fields.get(fieldId);
             }
         }
-        if (fieldFlags == null) {
-            fieldFlags = 0;
+        if (fieldFlags != null) {
+            expressionFlagsBuffer |= fieldFlags;
+            updateCallStackFrameIfNeeded(fieldFlags, isThisArgument, parameterIndex);
         }
-        expressionFlagsBuffer |= fieldFlags;
-        updateCallStackFrameIfNeeded(fieldFlags, isThisArgument, parameterIndex);
     }
 
     public static void applyFlagsFromArrayAccess(long jcInstructionId, Object arrayInstance, int index,
@@ -74,11 +76,10 @@ public class ConcolicCollector {
         if (objectDescriptor != null) {
             elementFlags = objectDescriptor.arrayElements.get(index);
         }
-        if (elementFlags == null) {
-            elementFlags = 0;
+        if (elementFlags != null) {
+            expressionFlagsBuffer |= elementFlags;
+            updateCallStackFrameIfNeeded(elementFlags, isThisArgument, parameterIndex);
         }
-        expressionFlagsBuffer |= elementFlags;
-        updateCallStackFrameIfNeeded(elementFlags, isThisArgument, parameterIndex);
     }
 
     private static void updateLastInstructionIfNeeded(long jcInstructionId) {
