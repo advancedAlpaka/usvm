@@ -1,9 +1,9 @@
 package org.usvm.instrumentation.instrumentation
 
 import org.jacodb.api.JcClasspath
+import org.jacodb.api.PredefinedPrimitives
 import org.jacodb.api.cfg.*
-import org.jacodb.api.ext.long
-import org.jacodb.api.ext.objectType
+import org.jacodb.api.ext.*
 import org.jacodb.impl.cfg.*
 import org.jacodb.impl.features.classpaths.virtual.JcVirtualClassImpl
 import org.jacodb.impl.features.classpaths.virtual.JcVirtualMethod
@@ -76,41 +76,117 @@ class TraceHelper(
 
     fun createOnExitCallMethodCall() = createStaticCall("onExitCall")
 
-    fun createApplyFlagsFromLocalVariableMethodCall(jcInstId: Long, index: Int,
-                                                    isThisArgument: Boolean, parameterIndex: Int) =
-        createStaticCall("applyFlagsFromLocalVariable", JcRawLong(jcInstId), JcRawInt(index),
-            JcRawBool(isThisArgument), JcRawInt(parameterIndex))
+    fun createProcessLocalVariableMethodCall(
+        jcInstId: Long, variableIndex: Int, variable: JcRawLocalVar,
+        concreteArgumentIndex: Int, isCallReceiver: Boolean, callParameterIndex: Int
+    ): JcRawCallInst {
+        val arguments = arrayOf(
+            JcRawLong(jcInstId), JcRawInt(variableIndex), variable,
+            JcRawInt(concreteArgumentIndex), JcRawBool(isCallReceiver), JcRawInt(callParameterIndex)
+        )
 
-    fun createApplyFlagsFromArgumentMethodCall(jcInstId: Long, index: Int,
-                                               isThisArgument: Boolean, parameterIndex: Int) =
-        createStaticCall("applyFlagsFromArgument", JcRawLong(jcInstId), JcRawInt(index),
-            JcRawBool(isThisArgument), JcRawInt(parameterIndex))
+        val methodName = when (variable.typeName.typeName) {
+            PredefinedPrimitives.Byte -> "processByteLocalVariable"
+            PredefinedPrimitives.Short -> "processShortLocalVariable"
+            PredefinedPrimitives.Int -> "processIntLocalVariable"
+            PredefinedPrimitives.Long -> "processLongLocalVariable"
+            PredefinedPrimitives.Float -> "processFloatLocalVariable"
+            PredefinedPrimitives.Double -> "processDoubleLocalVariable"
+            PredefinedPrimitives.Char -> "processCharLocalVariable"
+            PredefinedPrimitives.Boolean -> "processBooleanLocalVariable"
+            else -> "processLocalVariable"
+        }
+        return createStaticCall(methodName, *arguments)
+    }
 
-    fun createApplyFlagsFromFieldMethodCall(jcInstId: Long, fieldRef: JcRawFieldRef,
-                                               isThisArgument: Boolean, parameterIndex: Int) =
-        createStaticCall("applyFlagsFromField", JcRawLong(jcInstId), fieldRef.instance ?: JcRawNull(),
-            fieldRef.fieldId, JcRawBool(isThisArgument), JcRawInt(parameterIndex))
+    fun createProcessArgumentMethodCall(
+        jcInstId: Long, argumentIndex: Int, argument: JcRawArgument,
+        concreteArgumentIndex: Int, isCallReceiver: Boolean, callParameterIndex: Int
+    ): JcRawCallInst {
+        val arguments = arrayOf(
+            JcRawLong(jcInstId), JcRawInt(argumentIndex), argument,
+            JcRawInt(concreteArgumentIndex), JcRawBool(isCallReceiver), JcRawInt(callParameterIndex)
+        )
 
-    fun createApplyFlagsFromArrayAccessMethodCall(jcInstId: Long, arrayAccess: JcRawArrayAccess,
-                                            isThisArgument: Boolean, parameterIndex: Int) =
-        createStaticCall("applyFlagsFromArrayAccess", JcRawLong(jcInstId), arrayAccess.array,
-            arrayAccess.index, JcRawBool(isThisArgument), JcRawInt(parameterIndex))
+        val methodName = when (argument.typeName.typeName) {
+            PredefinedPrimitives.Byte -> "processByteArgument"
+            PredefinedPrimitives.Short -> "processShortArgument"
+            PredefinedPrimitives.Int -> "processIntArgument"
+            PredefinedPrimitives.Long -> "processLongArgument"
+            PredefinedPrimitives.Float -> "processFloatArgument"
+            PredefinedPrimitives.Double -> "processDoubleArgument"
+            PredefinedPrimitives.Char -> "processCharArgument"
+            PredefinedPrimitives.Boolean -> "processBooleanArgument"
+            else -> "processArgument"
+        }
+        return createStaticCall(methodName, *arguments)
+    }
 
-    fun createApplyFlagsFromThisMethodCall(jcInstId: Long, isThisArgument: Boolean, parameterIndex: Int) =
-        createStaticCall("applyFlagsFromThis", JcRawLong(jcInstId),
-            JcRawBool(isThisArgument), JcRawInt(parameterIndex))
+    fun createProcessThisMethodCall(
+        jcInstId: Long, thisValue: JcRawThis,
+        concreteArgumentIndex: Int, isCallReceiver: Boolean, callParameterIndex: Int
+    ) = createStaticCall(
+        "processThis", JcRawLong(jcInstId), thisValue,
+        JcRawInt(concreteArgumentIndex), JcRawBool(isCallReceiver), JcRawInt(callParameterIndex)
+    )
 
-    fun createAssignFlagsToLocalVariableMethodCall(variableIndex: Int) =
-        createStaticCall("assignFlagsToLocalVariable", JcRawInt(variableIndex))
+    fun createProcessFieldMethodCall(
+        jcInstId: Long, fieldRef: JcRawFieldRef,
+        concreteArgumentIndex: Int, isCallReceiver: Boolean, callParameterIndex: Int
+    ): JcRawCallInst {
+        val arguments = arrayOf(
+            JcRawLong(jcInstId), fieldRef.instance ?: JcRawNull(), fieldRef.fieldId, fieldRef,
+            JcRawInt(concreteArgumentIndex), JcRawBool(isCallReceiver), JcRawInt(callParameterIndex)
+        )
 
-    fun createAssignFlagsToArgumentMethodCall(argumentIndex: Int) =
-        createStaticCall("assignFlagsToArgument", JcRawInt(argumentIndex))
+        val methodName = when (fieldRef.typeName.typeName) {
+            PredefinedPrimitives.Byte -> "processByteField"
+            PredefinedPrimitives.Short -> "processShortField"
+            PredefinedPrimitives.Int -> "processIntField"
+            PredefinedPrimitives.Long -> "processLongField"
+            PredefinedPrimitives.Float -> "processFloatField"
+            PredefinedPrimitives.Double -> "processDoubleField"
+            PredefinedPrimitives.Char -> "processCharField"
+            PredefinedPrimitives.Boolean -> "processBooleanField"
+            else -> "processField"
+        }
+        return createStaticCall(methodName, *arguments)
+    }
 
-    fun createAssignFlagsToFieldMethodCall(fieldRef: JcRawFieldRef) =
-        createStaticCall("assignFlagsToField", fieldRef.instance ?: JcRawNull(), fieldRef.fieldId)
+    fun createProcessArrayAccessMethodCall(
+        jcInstId: Long, arrayAccess: JcRawArrayAccess,
+        concreteArgumentIndex: Int, isCallReceiver: Boolean, callParameterIndex: Int
+    ): JcRawCallInst {
+        val arguments = arrayOf(
+            JcRawLong(jcInstId), arrayAccess.array, arrayAccess.index, arrayAccess,
+            JcRawInt(concreteArgumentIndex), JcRawBool(isCallReceiver), JcRawInt(callParameterIndex)
+        )
 
-    fun createAssignFlagsToArrayMethodCall(arrayAccess: JcRawArrayAccess) =
-        createStaticCall("assignFlagsToArray", arrayAccess.array, arrayAccess.index)
+        val methodName = when (arrayAccess.typeName.typeName) {
+            PredefinedPrimitives.Byte -> "processByteArrayAccess"
+            PredefinedPrimitives.Short -> "processShortArrayAccess"
+            PredefinedPrimitives.Int -> "processIntArrayAccess"
+            PredefinedPrimitives.Long -> "processLongArrayAccess"
+            PredefinedPrimitives.Float -> "processFloatArrayAccess"
+            PredefinedPrimitives.Double -> "processDoubleArrayAccess"
+            PredefinedPrimitives.Char -> "processCharArrayAccess"
+            PredefinedPrimitives.Boolean -> "processBooleanArrayAccess"
+            else -> "processArrayAccess"
+        }
+        return createStaticCall(methodName, *arguments)
+    }
+
+    fun createAssignToLocalVariableMethodCall(variableIndex: Int) =
+        createStaticCall("assignToLocalVariable", JcRawInt(variableIndex))
+
+    fun createAssignToArgumentMethodCall(argumentIndex: Int) =
+        createStaticCall("assignToArgument", JcRawInt(argumentIndex))
+
+    fun createAssignToFieldMethodCall(fieldRef: JcRawFieldRef) =
+        createStaticCall("assignToField", fieldRef.instance ?: JcRawNull(), fieldRef.fieldId)
+
+    fun createAssignToArrayMethodCall(arrayAccess: JcRawArrayAccess) =
+        createStaticCall("assignToArray", arrayAccess.array, arrayAccess.index)
 
     fun createStaticExprWithLongArg(arg: Long, jcTraceMethod: JcVirtualMethod): JcRawStaticCallExpr {
         val argAsJcConst = JcRawLong(arg)

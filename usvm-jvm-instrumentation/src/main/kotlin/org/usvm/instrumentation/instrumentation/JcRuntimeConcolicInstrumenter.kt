@@ -17,19 +17,22 @@ class JcRuntimeConcolicInstrumenter(
     ) {
         when (rawJcInstruction) {
             is JcRawAssignInst -> {
-                insertResolveOperandsFlagsInstructions(encodedInst, listOf(rawJcInstruction.lhv),
-                    instrumentedInstructionsList, rawJcInstruction)
+                val processOperandsInstructions = getProcessOperandsInstructions(encodedInst, listOf(rawJcInstruction.rhv))
 
-                val assignFlagsInstruction = when (val lhv = rawJcInstruction.lhv) {
-                    is JcRawLocalVar -> concolicInfoHelper.createAssignFlagsToLocalVariableMethodCall(lhv.index)
-                    is JcRawArgument -> concolicInfoHelper.createAssignFlagsToArgumentMethodCall(lhv.index)
-                    is JcRawArrayAccess -> concolicInfoHelper.createAssignFlagsToArrayMethodCall(lhv)
-                    is JcRawFieldRef -> concolicInfoHelper.createAssignFlagsToFieldMethodCall(lhv)
-                    is JcRawConstant, is JcRawThis ->
-                        throw IllegalStateException("Variable expected as lhv of assign instruction")
+                if (processOperandsInstructions.isNotEmpty()) {
+                    instrumentedInstructionsList.insertBefore(rawJcInstruction, processOperandsInstructions)
+
+                    val assignFlagsInstruction = when (val lhv = rawJcInstruction.lhv) {
+                        is JcRawLocalVar -> concolicInfoHelper.createAssignToLocalVariableMethodCall(lhv.index)
+                        is JcRawArgument -> concolicInfoHelper.createAssignToArgumentMethodCall(lhv.index)
+                        is JcRawArrayAccess -> concolicInfoHelper.createAssignToArrayMethodCall(lhv)
+                        is JcRawFieldRef -> concolicInfoHelper.createAssignToFieldMethodCall(lhv)
+                        is JcRawConstant, is JcRawThis ->
+                            throw IllegalStateException("Variable expected as lhv of assign instruction")
+                    }
+
+                    instrumentedInstructionsList.insertBefore(rawJcInstruction, assignFlagsInstruction)
                 }
-
-                instrumentedInstructionsList.insertBefore(rawJcInstruction, assignFlagsInstruction)
 
                 if (rawJcInstruction.rhv is JcRawCallExpr) {
                     instrumentedInstructionsList.insertBefore(
@@ -40,18 +43,22 @@ class JcRuntimeConcolicInstrumenter(
             }
 
             is JcRawCallInst -> {
-                insertResolveOperandsFlagsInstructions(encodedInst, rawJcInstruction.operands,
-                    instrumentedInstructionsList, rawJcInstruction)
+                if (rawJcInstruction.callExpr !is JcRawSpecialCallExpr) {
+                    val processOperandsInstructions = getProcessOperandsInstructions(
+                        encodedInst, rawJcInstruction.operands
+                    )
 
-                instrumentedInstructionsList.insertBefore(
-                    rawJcInstruction, concolicInfoHelper.createOnEnterCallMethodCall()
-                )
+                    instrumentedInstructionsList.insertBefore(rawJcInstruction, processOperandsInstructions)
+                    instrumentedInstructionsList.insertBefore(
+                        rawJcInstruction, concolicInfoHelper.createOnEnterCallMethodCall()
+                    )
+                }
             }
 
             is JcRawReturnInst -> {
-                insertResolveOperandsFlagsInstructions(encodedInst, rawJcInstruction.operands,
-                    instrumentedInstructionsList, rawJcInstruction)
+                val processOperandsInstructions = getProcessOperandsInstructions(encodedInst, rawJcInstruction.operands)
 
+                instrumentedInstructionsList.insertBefore(rawJcInstruction, processOperandsInstructions)
                 instrumentedInstructionsList.insertBefore(
                     rawJcInstruction, concolicInfoHelper.createOnExitCallMethodCall()
                 )
@@ -63,8 +70,8 @@ class JcRuntimeConcolicInstrumenter(
             is JcRawCatchInst,
             is JcRawEnterMonitorInst,
             is JcRawExitMonitorInst -> {
-                insertResolveOperandsFlagsInstructions(encodedInst, rawJcInstruction.operands,
-                    instrumentedInstructionsList, rawJcInstruction)
+                val processOperandsInstructions = getProcessOperandsInstructions(encodedInst, rawJcInstruction.operands)
+                instrumentedInstructionsList.insertBefore(rawJcInstruction, processOperandsInstructions)
             }
 
             is JcRawGotoInst,
@@ -73,54 +80,49 @@ class JcRuntimeConcolicInstrumenter(
         }
     }
 
-    private fun resolveExpressionFlags(encodedInst: Long, expr: JcRawExpr,
-                                       isThisArgument: Boolean = false, parameterIndex: Int = -1): List<JcRawInst> {
-        return when(expr) {
-            is JcRawBinaryExpr -> resolveExpressionFlags(encodedInst, expr.lhv) +
-                        resolveExpressionFlags(encodedInst, expr.rhv)
-            is JcRawArrayAccess -> resolveExpressionFlags(encodedInst, expr.array) +
-                    resolveExpressionFlags(encodedInst, expr.index) +
-                    concolicInfoHelper.createApplyFlagsFromArrayAccessMethodCall(encodedInst, expr,
-                        isThisArgument, parameterIndex)
+    private fun getProcessOperandsInstructions(encodedInst: Long, operands: List<JcRawExpr>): List<JcRawInst> {
+        var concreteArgumentIndex = 0
 
-            is JcRawInstanceExpr -> resolveExpressionFlags(encodedInst, expr.instance, true) +
-                    expr.args.withIndex()
-                        .flatMap { (index, arg) -> resolveExpressionFlags(encodedInst, arg, parameterIndex = index) }
-            is JcRawCallExpr -> expr.args.withIndex()
-                .flatMap { (index, arg) -> resolveExpressionFlags(encodedInst, arg, parameterIndex = index) }
-            is JcRawNewArrayExpr -> expr.dimensions.flatMap { resolveExpressionFlags(encodedInst, it) }
+        fun processExpression(encodedInst: Long, expr: JcRawExpr,
+                              isCallReceiver: Boolean = false, callParameterIndex: Int = -1): List<JcRawInst> {
+            return when(expr) {
+                is JcRawBinaryExpr -> processExpression(encodedInst, expr.lhv) +
+                        processExpression(encodedInst, expr.rhv)
+                is JcRawArrayAccess -> processExpression(encodedInst, expr.array) +
+                        processExpression(encodedInst, expr.index) +
+                        concolicInfoHelper.createProcessArrayAccessMethodCall(encodedInst, expr,
+                            concreteArgumentIndex++, isCallReceiver, callParameterIndex)
 
-            is JcRawCastExpr -> resolveExpressionFlags(encodedInst, expr.operand)
-            is JcRawInstanceOfExpr -> resolveExpressionFlags(encodedInst, expr.operand)
-            is JcRawLengthExpr -> resolveExpressionFlags(encodedInst, expr.array)
-            is JcRawNegExpr -> resolveExpressionFlags(encodedInst, expr.operand)
+                is JcRawInstanceExpr -> processExpression(encodedInst, expr.instance, true) +
+                        expr.args.withIndex()
+                            .flatMap { (index, arg) -> processExpression(encodedInst, arg, callParameterIndex = index) }
+                is JcRawCallExpr -> expr.args.withIndex()
+                    .flatMap { (index, arg) -> processExpression(encodedInst, arg, callParameterIndex = index) }
+                is JcRawNewArrayExpr -> expr.dimensions.flatMap { processExpression(encodedInst, it) }
 
-            is JcRawFieldRef ->
-                listOf(concolicInfoHelper.createApplyFlagsFromFieldMethodCall(encodedInst, expr,
-                    isThisArgument, parameterIndex))
-            is JcRawArgument ->
-                listOf(concolicInfoHelper.createApplyFlagsFromArgumentMethodCall(encodedInst, expr.index,
-                    isThisArgument, parameterIndex))
-            is JcRawLocalVar ->
-                listOf(concolicInfoHelper.createApplyFlagsFromLocalVariableMethodCall(encodedInst, expr.index,
-                    isThisArgument, parameterIndex))
-            is JcRawThis ->
-                listOf(concolicInfoHelper.createApplyFlagsFromThisMethodCall(encodedInst, isThisArgument,
-                    parameterIndex))
+                is JcRawCastExpr -> processExpression(encodedInst, expr.operand)
+                is JcRawInstanceOfExpr -> processExpression(encodedInst, expr.operand)
+                is JcRawLengthExpr -> processExpression(encodedInst, expr.array)
+                is JcRawNegExpr -> processExpression(encodedInst, expr.operand)
 
-            is JcRawConstant -> emptyList()
-            is JcRawNewExpr -> emptyList()
+                is JcRawFieldRef ->
+                    listOf(concolicInfoHelper.createProcessFieldMethodCall(encodedInst, expr,
+                        concreteArgumentIndex++, isCallReceiver, callParameterIndex))
+                is JcRawArgument ->
+                    listOf(concolicInfoHelper.createProcessArgumentMethodCall(encodedInst, expr.index, expr,
+                        concreteArgumentIndex++, isCallReceiver, callParameterIndex))
+                is JcRawLocalVar ->
+                    listOf(concolicInfoHelper.createProcessLocalVariableMethodCall(encodedInst, expr.index, expr,
+                        concreteArgumentIndex++, isCallReceiver, callParameterIndex))
+                is JcRawThis ->
+                    listOf(concolicInfoHelper.createProcessThisMethodCall(encodedInst, expr,
+                        concreteArgumentIndex++, isCallReceiver, callParameterIndex))
+
+                is JcRawConstant, is JcRawNewExpr -> emptyList<JcRawInst>().also { concreteArgumentIndex++ }
+            }
         }
-    }
 
-    private fun insertResolveOperandsFlagsInstructions(
-        encodedInst: Long,
-        operands: List<JcRawExpr>,
-        instrumentedInstructionsList: JcMutableInstList<JcRawInst>,
-        rawJcInstruction: JcRawInst
-    ) {
-        val resolveExpressionsFlags = operands.flatMap { resolveExpressionFlags(encodedInst, it) }
-        instrumentedInstructionsList.insertBefore(rawJcInstruction, resolveExpressionsFlags)
+        return operands.flatMap { processExpression(encodedInst, it) }
     }
 
     // TODO: use index property from new version of JacoDB

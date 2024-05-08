@@ -7,7 +7,7 @@ public class ConcolicCollector {
     private static final HashMap<String, Byte> staticFieldsFlags = new HashMap<>();
 
 
-    private static Long lastInstruction;
+    private static InstructionInfo lastInstruction;
     private static byte expressionFlagsBuffer;
 
 
@@ -19,39 +19,129 @@ public class ConcolicCollector {
 
     public static void onExitCall() {
         stackValuesFlags.removeLast();
+        if (stackValuesFlags.size == 0) {
+            saveLastInstructionIfSymbolic();
+        }
     }
 
-    public static void applyFlagsFromLocalVariable(long jcInstructionId, int variableIndex,
-                                                   boolean isThisArgument, int parameterIndex) {
+    public static void processLocalVariable(long jcInstructionId, int variableIndex, Object variableValue,
+                                            int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
         Byte variableFlags = stackValuesFlags.last().localVariables.get(variableIndex);
-        if (variableFlags != null) {
-            expressionFlagsBuffer |= variableFlags;
-            updateCallStackFrameIfNeeded(variableFlags, isThisArgument, parameterIndex);
+        if (variableFlags == null) {
+            variableFlags = 0;
         }
+        expressionFlagsBuffer |= variableFlags;
+        addExpressionValueIfConcrete(variableFlags, concreteArgumentIndex, variableValue);
+        updateCallStackFrameIfNeeded(variableFlags, isCallReceiver, callParameterIndex);
     }
 
-    public static void applyFlagsFromArgument(long jcInstructionId, int argumentIndex,
-                                              boolean isThisArgument, int parameterIndex) {
+    public static void processByteLocalVariable(long jcInstructionId, int variableIndex, byte variableValue,
+                                                int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processLocalVariable(jcInstructionId, variableIndex, variableValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processShortLocalVariable(long jcInstructionId, int variableIndex, short variableValue,
+                                                 int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processLocalVariable(jcInstructionId, variableIndex, variableValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processIntLocalVariable(long jcInstructionId, int variableIndex, int variableValue,
+                                               int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processLocalVariable(jcInstructionId, variableIndex, variableValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processLongLocalVariable(long jcInstructionId, int variableIndex, long variableValue,
+                                                int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processLocalVariable(jcInstructionId, variableIndex, variableValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processFloatLocalVariable(long jcInstructionId, int variableIndex, float variableValue,
+                                                 int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processLocalVariable(jcInstructionId, variableIndex, variableValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processDoubleLocalVariable(long jcInstructionId, int variableIndex, double variableValue,
+                                                  int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processLocalVariable(jcInstructionId, variableIndex, variableValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processCharLocalVariable(long jcInstructionId, int variableIndex, char variableValue,
+                                                int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processLocalVariable(jcInstructionId, variableIndex, variableValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processBooleanLocalVariable(long jcInstructionId, int variableIndex, boolean variableValue,
+                                                   int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processLocalVariable(jcInstructionId, variableIndex, variableValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processArgument(long jcInstructionId, int argumentIndex, Object argumentValue,
+                                       int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
         Byte argumentFlags = stackValuesFlags.last().arguments.get(argumentIndex);
-        if (argumentFlags != null) {
-            expressionFlagsBuffer |= argumentFlags;
-            updateCallStackFrameIfNeeded(argumentFlags, isThisArgument, parameterIndex);
+        if (argumentFlags == null) {
+            argumentFlags = 0;
         }
+        expressionFlagsBuffer |= argumentFlags;
+        addExpressionValueIfConcrete(argumentFlags, concreteArgumentIndex, argumentValue);
+        updateCallStackFrameIfNeeded(argumentFlags, isCallReceiver, callParameterIndex);
     }
 
-    public static void applyFlagsFromThis(long jcInstructionId, boolean isThisArgument, int parameterIndex) {
+    public static void processByteArgument(long jcInstructionId, int argumentIndex, byte argumentValue,
+                                           int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArgument(jcInstructionId, argumentIndex, argumentValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processShortArgument(long jcInstructionId, int argumentIndex, short argumentValue,
+                                            int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArgument(jcInstructionId, argumentIndex, argumentValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processIntArgument(long jcInstructionId, int argumentIndex, int argumentValue,
+                                          int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArgument(jcInstructionId, argumentIndex, argumentValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processLongArgument(long jcInstructionId, int argumentIndex, long argumentValue,
+                                           int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArgument(jcInstructionId, argumentIndex, argumentValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processFloatArgument(long jcInstructionId, int argumentIndex, float argumentValue,
+                                            int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArgument(jcInstructionId, argumentIndex, argumentValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processDoubleArgument(long jcInstructionId, int argumentIndex, double argumentValue,
+                                             int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArgument(jcInstructionId, argumentIndex, argumentValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processCharArgument(long jcInstructionId, int argumentIndex, char argumentValue,
+                                           int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArgument(jcInstructionId, argumentIndex, argumentValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processBooleanArgument(long jcInstructionId, int argumentIndex, boolean argumentValue,
+                                              int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArgument(jcInstructionId, argumentIndex, argumentValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processThis(long jcInstructionId, Object thisValue,
+                                   int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
         Byte thisFlags = stackValuesFlags.last().thisDescriptor;
-        if (thisFlags != null) {
-            expressionFlagsBuffer |= thisFlags;
-            updateCallStackFrameIfNeeded(thisFlags, isThisArgument, parameterIndex);
+        if (thisFlags == null) {
+            thisFlags = 0;
         }
+        expressionFlagsBuffer |= thisFlags;
+        addExpressionValueIfConcrete(thisFlags, concreteArgumentIndex, thisValue);
+        updateCallStackFrameIfNeeded(thisFlags, isCallReceiver, callParameterIndex);
     }
 
-    public static void applyFlagsFromField(long jcInstructionId, Object instance, String fieldId,
-                                           boolean isThisArgument, int parameterIndex) {
+    public static void processField(long jcInstructionId, Object instance, String fieldId, Object fieldValue,
+                                    int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
         Byte fieldFlags = null;
         if (instance == null) {
@@ -62,50 +152,147 @@ public class ConcolicCollector {
                 fieldFlags = objectDescriptor.fields.get(fieldId);
             }
         }
-        if (fieldFlags != null) {
-            expressionFlagsBuffer |= fieldFlags;
-            updateCallStackFrameIfNeeded(fieldFlags, isThisArgument, parameterIndex);
+        if (fieldFlags == null) {
+            fieldFlags = 0;
         }
+        expressionFlagsBuffer |= fieldFlags;
+        addExpressionValueIfConcrete(fieldFlags, concreteArgumentIndex, fieldValue);
+        updateCallStackFrameIfNeeded(fieldFlags, isCallReceiver, callParameterIndex);
     }
 
-    public static void applyFlagsFromArrayAccess(long jcInstructionId, Object arrayInstance, int index,
-                                                 boolean isThisArgument, int parameterIndex) {
+    public static void processByteField(long jcInstructionId, Object instance, String fieldId, byte fieldValue,
+                                        int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processShortField(long jcInstructionId, Object instance, String fieldId, short fieldValue,
+                                         int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processIntField(long jcInstructionId, Object instance, String fieldId, int fieldValue,
+                                       int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processLongField(long jcInstructionId, Object instance, String fieldId, long fieldValue,
+                                        int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processFloatField(long jcInstructionId, Object instance, String fieldId, float fieldValue,
+                                         int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processDoubleField(long jcInstructionId, Object instance, String fieldId, double fieldValue,
+                                          int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processCharField(long jcInstructionId, Object instance, String fieldId, char fieldValue,
+                                        int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processBooleanField(long jcInstructionId, Object instance, String fieldId, boolean fieldValue,
+                                           int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processArrayAccess(long jcInstructionId, Object arrayInstance, int arrayIndex, Object value,
+                                          int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
         Byte elementFlags = null;
         HeapObjectDescriptor objectDescriptor = heapFlags.get(System.identityHashCode(arrayInstance));
         if (objectDescriptor != null) {
-            elementFlags = objectDescriptor.arrayElements.get(index);
+            elementFlags = objectDescriptor.arrayElements.get(arrayIndex);
         }
-        if (elementFlags != null) {
-            expressionFlagsBuffer |= elementFlags;
-            updateCallStackFrameIfNeeded(elementFlags, isThisArgument, parameterIndex);
+        if (elementFlags == null) {
+            elementFlags = 0;
         }
+        expressionFlagsBuffer |= elementFlags;
+        addExpressionValueIfConcrete(elementFlags, concreteArgumentIndex, value);
+        updateCallStackFrameIfNeeded(elementFlags, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processByteArrayAccess(long jcInstructionId, Object arrayInstance, int arrayIndex, byte value,
+                                              int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArrayAccess(jcInstructionId, arrayInstance, arrayIndex, value, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processShortArrayAccess(long jcInstructionId, Object arrayInstance, int arrayIndex, short value,
+                                               int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArrayAccess(jcInstructionId, arrayInstance, arrayIndex, value, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processIntArrayAccess(long jcInstructionId, Object arrayInstance, int arrayIndex, int value,
+                                             int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArrayAccess(jcInstructionId, arrayInstance, arrayIndex, value, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processLongArrayAccess(long jcInstructionId, Object arrayInstance, int arrayIndex, long value,
+                                              int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArrayAccess(jcInstructionId, arrayInstance, arrayIndex, value, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processFloatArrayAccess(long jcInstructionId, Object arrayInstance, int arrayIndex, float value,
+                                               int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArrayAccess(jcInstructionId, arrayInstance, arrayIndex, value, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processDoubleArrayAccess(long jcInstructionId, Object arrayInstance, int arrayIndex, double value,
+                                                int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArrayAccess(jcInstructionId, arrayInstance, arrayIndex, value, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processCharArrayAccess(long jcInstructionId, Object arrayInstance, int arrayIndex, char value,
+                                              int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArrayAccess(jcInstructionId, arrayInstance, arrayIndex, value, concreteArgumentIndex, isCallReceiver, callParameterIndex);
+    }
+
+    public static void processBooleanArrayAccess(long jcInstructionId, Object arrayInstance, int arrayIndex, boolean value,
+                                                 int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
+        processArrayAccess(jcInstructionId, arrayInstance, arrayIndex, value, concreteArgumentIndex, isCallReceiver, callParameterIndex);
     }
 
     private static void updateLastInstructionIfNeeded(long jcInstructionId) {
-        if (lastInstruction == null || lastInstruction != jcInstructionId) {
-            lastInstruction = jcInstructionId;
+        if (lastInstruction == null || lastInstruction.jcInstructionId != jcInstructionId) {
+            saveLastInstructionIfSymbolic();
+            lastInstruction = new InstructionInfo(jcInstructionId);
             expressionFlagsBuffer = 0;
         }
     }
 
-    private static void updateCallStackFrameIfNeeded(Byte flags, boolean isThisArgument, int parameterIndex) {
-        if (isThisArgument) {
+    private static void updateCallStackFrameIfNeeded(Byte flags, boolean isCallReceiver, int callParameterIndex) {
+        if (isCallReceiver) {
             newCallStackFrame.thisDescriptor = flags;
-        } else if (parameterIndex != -1) {
-            newCallStackFrame.arguments.put(parameterIndex, flags);
+        } else if (callParameterIndex != -1) {
+            newCallStackFrame.arguments.put(callParameterIndex, flags);
         }
     }
 
-    public static void assignFlagsToLocalVariable(int variableIndex) {
+    private static void saveLastInstructionIfSymbolic() {
+        if (lastInstruction != null && isSymbolic(expressionFlagsBuffer)) {
+            symbolicInstructionsTrace.add(lastInstruction);
+        }
+    }
+
+    private static void addExpressionValueIfConcrete(byte valueFlags, int index, Object value) {
+        if (!isSymbolic(valueFlags)) {
+            lastInstruction.concreteArguments.add(new ConcreteArgument(index, value));
+        }
+    }
+
+    public static void assignToLocalVariable(int variableIndex) {
         stackValuesFlags.last().localVariables.put(variableIndex, expressionFlagsBuffer);
     }
 
-    public static void assignFlagsToArgument(int argumentIndex) {
+    public static void assignToArgument(int argumentIndex) {
         stackValuesFlags.last().arguments.put(argumentIndex, expressionFlagsBuffer);
     }
 
-    public static void assignFlagsToField(Object instance, String fieldId) {
+    public static void assignToField(Object instance, String fieldId) {
         if (instance == null) {
             staticFieldsFlags.put(fieldId, expressionFlagsBuffer);
         } else {
@@ -119,7 +306,7 @@ public class ConcolicCollector {
         }
     }
 
-    public static void assignFlagsToArray(Object arrayInstance, int index) {
+    public static void assignToArray(Object arrayInstance, int index) {
         int heapRef = System.identityHashCode(arrayInstance);
         HeapObjectDescriptor objectDescriptor = heapFlags.get(heapRef);
         if (objectDescriptor == null) {
@@ -129,13 +316,20 @@ public class ConcolicCollector {
         heapFlags.put(heapRef, objectDescriptor);
     }
 
+    private static boolean isSymbolic(byte flags) {
+        return isBitSetInFlags(flags, 0);
+    }
+
+    private static boolean isBitSetInFlags(byte flags, int position) {
+        return (flags & (1 << position)) != 0;
+    }
+
     public static class InstructionInfo {
         public long jcInstructionId;
-        public ArrayList<ConcreteArgument> concreteArguments;
+        public ArrayList<ConcreteArgument> concreteArguments = new ArrayList<>();
 
-        public InstructionInfo(long jcInstructionId, ArrayList<ConcreteArgument> concreteArguments) {
+        public InstructionInfo(long jcInstructionId) {
             this.jcInstructionId = jcInstructionId;
-            this.concreteArguments = concreteArguments;
         }
     }
 
@@ -223,7 +417,7 @@ public class ConcolicCollector {
             this.table = new Entry[DEFAULT_CAPACITY];
         }
 
-        static class Entry <K, V> {
+        static class Entry<K, V> {
             K key;
             V value;
             Entry<K, V> next;
