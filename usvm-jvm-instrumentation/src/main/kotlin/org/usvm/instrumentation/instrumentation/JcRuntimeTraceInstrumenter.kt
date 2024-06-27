@@ -20,6 +20,8 @@ open class JcRuntimeTraceInstrumenter(
     override val jcClasspath: JcClasspath
 ) : JcInstrumenter, AbstractFullRawExprSetCollector() {
 
+    protected open val instrumentConstructors = false
+
     private val rawStaticsGet = hashSetOf<JcRawFieldRef>()
     private val rawStaticsSet = hashSetOf<JcRawFieldRef>()
 
@@ -89,9 +91,10 @@ open class JcRuntimeTraceInstrumenter(
         val jcClass = jcClasspath.findClassOrNull(className) ?: return classNode
         val asmMethods = classNode.methods
         val methodsToInstrument = if (jcClass.isEnum) {
-            jcClass.declaredMethods.filterNot { it.isConstructor || it.isClassInitializer || it.name == "values" || it.name == "valueOf" }
+            jcClass.declaredMethods.filterNot { !instrumentConstructors && it.isConstructor || it.isClassInitializer ||
+                    it.name == "values" || it.name == "valueOf" }
         } else {
-            jcClass.declaredMethods.filterNot { it.isConstructor || it.isClassInitializer }
+            jcClass.declaredMethods.filterNot { !instrumentConstructors && it.isConstructor || it.isClassInitializer }
         }
         //Copy of clinit method to be able to rollback statics between executions!
         //We are not able to call <clinit> method directly with reflection

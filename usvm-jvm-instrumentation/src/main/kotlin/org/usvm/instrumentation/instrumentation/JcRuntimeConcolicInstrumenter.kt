@@ -9,6 +9,8 @@ class JcRuntimeConcolicInstrumenter(
     override val jcClasspath: JcClasspath
 ) : JcRuntimeTraceInstrumenter(jcClasspath) {
 
+    override val instrumentConstructors = true
+
     private val concolicInfoHelper = TraceHelper(jcClasspath, ConcolicCollector::class.java)
 
     override fun processInstruction(
@@ -45,18 +47,16 @@ class JcRuntimeConcolicInstrumenter(
             }
 
             is JcRawCallInst -> {
-                if (rawJcInstruction.callExpr !is JcRawSpecialCallExpr) {
-                    instrumentedInstructionsList.insertBefore(
-                        rawJcInstruction,
-                        concolicInfoHelper.createInitializeNewCallStackFrameMethodCall(rawJcInstruction.callExpr.args.size)
-                    )
+                instrumentedInstructionsList.insertBefore(
+                    rawJcInstruction,
+                    concolicInfoHelper.createInitializeNewCallStackFrameMethodCall(rawJcInstruction.callExpr.args.size)
+                )
 
-                    val processOperandsInstructions = getProcessOperandsInstructions(
-                        encodedInst, rawJcInstruction.operands
-                    )
+                val processOperandsInstructions = getProcessOperandsInstructions(
+                    encodedInst, rawJcInstruction.operands
+                )
 
-                    instrumentedInstructionsList.insertBefore(rawJcInstruction, processOperandsInstructions)
-                }
+                instrumentedInstructionsList.insertBefore(rawJcInstruction, processOperandsInstructions)
             }
 
             is JcRawReturnInst -> {
@@ -107,11 +107,17 @@ class JcRuntimeConcolicInstrumenter(
                         concolicInfoHelper.createProcessArrayAccessMethodCall(encodedInst, expr,
                             concreteArgumentIndex++, isCallReceiver, callParameterIndex)
 
-                is JcRawInstanceExpr -> processExpression(encodedInst, expr.instance, true) +
-                        expr.args.withIndex()
-                            .flatMap { (index, arg) -> processExpression(encodedInst, arg, callParameterIndex = index) }
-                is JcRawCallExpr -> expr.args.withIndex()
-                    .flatMap { (index, arg) -> processExpression(encodedInst, arg, callParameterIndex = index) }
+                is JcRawCallExpr -> {
+                    val argumentsInstructions = expr.args.withIndex()
+                        .flatMap { (index, arg) -> processExpression(encodedInst, arg, callParameterIndex = index) }
+
+                    if (expr is JcRawInstanceExpr && expr !is JcRawSpecialCallExpr) {
+                        return processExpression(encodedInst, expr.instance, true) + argumentsInstructions
+                    }
+
+                    return argumentsInstructions
+                }
+
                 is JcRawNewArrayExpr -> expr.dimensions.flatMap { processExpression(encodedInst, it) }
 
                 is JcRawCastExpr -> processExpression(encodedInst, expr.operand)
