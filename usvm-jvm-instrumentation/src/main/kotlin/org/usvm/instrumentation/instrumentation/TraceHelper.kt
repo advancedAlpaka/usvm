@@ -72,9 +72,13 @@ class TraceHelper(
         )
     }
 
-    fun createOnEnterCallMethodCall() = createStaticCall("onEnterCall")
+    fun createInitializeNewCallStackFrameMethodCall(argumentsNum: Int) =
+        createStaticCall("initializeNewCallStackFrame", JcRawInt(argumentsNum))
 
-    fun createOnExitCallMethodCall() = createStaticCall("onExitCall")
+    fun createOnEnterFunctionMethodCall(localVariablesNum: Int) =
+        createStaticCall("onEnterFunction", JcRawInt(localVariablesNum))
+
+    fun createOnExitFunctionMethodCall() = createStaticCall("onExitFunction")
 
     fun createProcessLocalVariableMethodCall(
         jcInstId: Long, variableIndex: Int, variable: JcRawLocalVar,
@@ -212,6 +216,6 @@ class TraceHelper(
         return JcRawCallInst(method, callExpr)
     }
 
-    private val JcRawFieldRef.fieldId: JcRawStringConstant
-        get() = JcRawString(if (instance == null) toString() else fieldName)
+    private val JcRawFieldRef.fieldId: JcRawInt
+        get() = JcRawInt(JcConcolicTracer.encodeField(this, jcClasspath))
 }

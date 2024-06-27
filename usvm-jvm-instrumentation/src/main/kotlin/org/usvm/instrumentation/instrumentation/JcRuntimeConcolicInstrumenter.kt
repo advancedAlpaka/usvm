@@ -1,6 +1,7 @@
 package org.usvm.instrumentation.instrumentation
 
 import org.jacodb.api.JcClasspath
+import org.jacodb.api.JcMethod
 import org.jacodb.api.cfg.*
 import org.usvm.instrumentation.collector.trace.ConcolicCollector
 
@@ -17,7 +18,15 @@ class JcRuntimeConcolicInstrumenter(
     ) {
         when (rawJcInstruction) {
             is JcRawAssignInst -> {
-                val processOperandsInstructions = getProcessOperandsInstructions(encodedInst, listOf(rawJcInstruction.rhv))
+                val rhv = rawJcInstruction.rhv
+                if (rhv is JcRawCallExpr) {
+                    instrumentedInstructionsList.insertBefore(
+                        rawJcInstruction,
+                        concolicInfoHelper.createInitializeNewCallStackFrameMethodCall(rhv.args.size)
+                    )
+                }
+
+                val processOperandsInstructions = getProcessOperandsInstructions(encodedInst, listOf(rhv))
 
                 if (processOperandsInstructions.isNotEmpty()) {
                     instrumentedInstructionsList.insertBefore(rawJcInstruction, processOperandsInstructions)
@@ -33,25 +42,20 @@ class JcRuntimeConcolicInstrumenter(
 
                     instrumentedInstructionsList.insertBefore(rawJcInstruction, assignFlagsInstruction)
                 }
-
-                if (rawJcInstruction.rhv is JcRawCallExpr) {
-                    instrumentedInstructionsList.insertBefore(
-                        rawJcInstruction,
-                        concolicInfoHelper.createOnEnterCallMethodCall()
-                    )
-                }
             }
 
             is JcRawCallInst -> {
                 if (rawJcInstruction.callExpr !is JcRawSpecialCallExpr) {
+                    instrumentedInstructionsList.insertBefore(
+                        rawJcInstruction,
+                        concolicInfoHelper.createInitializeNewCallStackFrameMethodCall(rawJcInstruction.callExpr.args.size)
+                    )
+
                     val processOperandsInstructions = getProcessOperandsInstructions(
                         encodedInst, rawJcInstruction.operands
                     )
 
                     instrumentedInstructionsList.insertBefore(rawJcInstruction, processOperandsInstructions)
-                    instrumentedInstructionsList.insertBefore(
-                        rawJcInstruction, concolicInfoHelper.createOnEnterCallMethodCall()
-                    )
                 }
             }
 
@@ -60,7 +64,7 @@ class JcRuntimeConcolicInstrumenter(
 
                 instrumentedInstructionsList.insertBefore(rawJcInstruction, processOperandsInstructions)
                 instrumentedInstructionsList.insertBefore(
-                    rawJcInstruction, concolicInfoHelper.createOnExitCallMethodCall()
+                    rawJcInstruction, concolicInfoHelper.createOnExitFunctionMethodCall()
                 )
             }
 
@@ -78,6 +82,16 @@ class JcRuntimeConcolicInstrumenter(
             is JcRawLineNumberInst,
             is JcRawLabelInst -> {}
         }
+    }
+
+    override fun atMethodStart(jcMethod: JcMethod, instrumentedInstructionsList: JcMutableInstList<JcRawInst>) {
+        val localVariablesSize = jcMethod.rawInstList.asSequence()
+            .flatMap { it.operands }.filterIsInstance<JcRawLocalVar>()
+            .maxOfOrNull { it.index } ?: -1
+
+        val onEnterFunctionMethodCall = concolicInfoHelper.createOnEnterFunctionMethodCall(localVariablesSize + 1)
+
+        instrumentedInstructionsList.insertBefore(instrumentedInstructionsList.first(), onEnterFunctionMethodCall)
     }
 
     private fun getProcessOperandsInstructions(encodedInst: Long, operands: List<JcRawExpr>): List<JcRawInst> {

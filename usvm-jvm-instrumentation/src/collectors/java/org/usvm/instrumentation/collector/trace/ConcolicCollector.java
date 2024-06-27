@@ -3,21 +3,25 @@ package org.usvm.instrumentation.collector.trace;
 public class ConcolicCollector {
     public static final ArrayList<InstructionInfo> symbolicInstructionsTrace = new ArrayList<>();
     private static final ArrayList<StackFrame> stackValuesFlags = new ArrayList<>();
-    private static final HashMap<Integer, HeapObjectDescriptor> heapFlags = new HashMap<>();
-    private static final HashMap<String, Byte> staticFieldsFlags = new HashMap<>();
+    private static final IdentityHashMap<Object, HeapObjectDescriptor> heapFlags = new IdentityHashMap<>();
+    private static byte[] staticFieldsFlags = new byte[32];
 
 
     private static InstructionInfo lastInstruction;
     private static byte expressionFlagsBuffer;
 
+    private static StackFrame newCallStackFrame;
 
-    private static StackFrame newCallStackFrame = new StackFrame();
-    public static void onEnterCall() {
-        stackValuesFlags.add(newCallStackFrame);
-        newCallStackFrame = new StackFrame();
+    public static void initializeNewCallStackFrame(int argumentsNum) {
+        newCallStackFrame = new StackFrame(argumentsNum);
     }
 
-    public static void onExitCall() {
+    public static void onEnterFunction(int localVariablesNum) {
+        newCallStackFrame.localVariables = new byte[localVariablesNum];
+        stackValuesFlags.add(newCallStackFrame);
+    }
+
+    public static void onExitFunction() {
         stackValuesFlags.removeLast();
         if (stackValuesFlags.size == 0) {
             saveLastInstructionIfSymbolic();
@@ -27,10 +31,7 @@ public class ConcolicCollector {
     public static void processLocalVariable(long jcInstructionId, int variableIndex, Object variableValue,
                                             int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
-        Byte variableFlags = stackValuesFlags.last().localVariables.get(variableIndex);
-        if (variableFlags == null) {
-            variableFlags = 0;
-        }
+        byte variableFlags = stackValuesFlags.last().localVariables[variableIndex];
         expressionFlagsBuffer |= variableFlags;
         addExpressionValueIfConcrete(variableFlags, concreteArgumentIndex, variableValue);
         updateCallStackFrameIfNeeded(variableFlags, isCallReceiver, callParameterIndex);
@@ -79,10 +80,7 @@ public class ConcolicCollector {
     public static void processArgument(long jcInstructionId, int argumentIndex, Object argumentValue,
                                        int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
-        Byte argumentFlags = stackValuesFlags.last().arguments.get(argumentIndex);
-        if (argumentFlags == null) {
-            argumentFlags = 0;
-        }
+        byte argumentFlags = stackValuesFlags.last().arguments[argumentIndex];
         expressionFlagsBuffer |= argumentFlags;
         addExpressionValueIfConcrete(argumentFlags, concreteArgumentIndex, argumentValue);
         updateCallStackFrameIfNeeded(argumentFlags, isCallReceiver, callParameterIndex);
@@ -131,71 +129,67 @@ public class ConcolicCollector {
     public static void processThis(long jcInstructionId, Object thisValue,
                                    int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
-        Byte thisFlags = stackValuesFlags.last().thisDescriptor;
-        if (thisFlags == null) {
-            thisFlags = 0;
-        }
+        byte thisFlags = stackValuesFlags.last().thisDescriptor;
         expressionFlagsBuffer |= thisFlags;
         addExpressionValueIfConcrete(thisFlags, concreteArgumentIndex, thisValue);
         updateCallStackFrameIfNeeded(thisFlags, isCallReceiver, callParameterIndex);
     }
 
-    public static void processField(long jcInstructionId, Object instance, String fieldId, Object fieldValue,
+    public static void processField(long jcInstructionId, Object instance, int fieldId, Object fieldValue,
                                     int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
-        Byte fieldFlags = null;
+        byte fieldFlags = 0;
         if (instance == null) {
-            fieldFlags = staticFieldsFlags.get(fieldId);
-        } else {
-            HeapObjectDescriptor objectDescriptor = heapFlags.get(System.identityHashCode(instance));
-            if (objectDescriptor != null) {
-                fieldFlags = objectDescriptor.fields.get(fieldId);
+            if (fieldId < staticFieldsFlags.length) {
+                fieldFlags = staticFieldsFlags[fieldId];
             }
-        }
-        if (fieldFlags == null) {
-            fieldFlags = 0;
+        } else {
+            HeapObjectDescriptor objectDescriptor = heapFlags.get(instance);
+            if (objectDescriptor != null) {
+                fieldFlags = objectDescriptor.getFlags(fieldId);
+            }
         }
         expressionFlagsBuffer |= fieldFlags;
         addExpressionValueIfConcrete(fieldFlags, concreteArgumentIndex, fieldValue);
         updateCallStackFrameIfNeeded(fieldFlags, isCallReceiver, callParameterIndex);
     }
 
-    public static void processByteField(long jcInstructionId, Object instance, String fieldId, byte fieldValue,
+    public static void processByteField(long jcInstructionId, Object instance, int fieldId, byte fieldValue,
                                         int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
     }
 
-    public static void processShortField(long jcInstructionId, Object instance, String fieldId, short fieldValue,
+    public static void processShortField(long jcInstructionId, Object instance, int fieldId, short fieldValue,
                                          int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
     }
 
-    public static void processIntField(long jcInstructionId, Object instance, String fieldId, int fieldValue,
+    public static void processIntField(long jcInstructionId, Object instance, int fieldId, int fieldValue,
                                        int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
     }
 
-    public static void processLongField(long jcInstructionId, Object instance, String fieldId, long fieldValue,
+    public static void processLongField(long jcInstructionId, Object instance, int fieldId, long fieldValue,
                                         int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
     }
 
-    public static void processFloatField(long jcInstructionId, Object instance, String fieldId, float fieldValue,
+    public static void processFloatField(long jcInstructionId, Object instance, int fieldId, float fieldValue,
                                          int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
     }
 
-    public static void processDoubleField(long jcInstructionId, Object instance, String fieldId, double fieldValue,
+    public static void processDoubleField(long jcInstructionId, Object instance, int fieldId, double fieldValue,
                                           int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
     }
 
-    public static void processCharField(long jcInstructionId, Object instance, String fieldId, char fieldValue,
+    public static void processCharField(long jcInstructionId, Object instance, int fieldId, char fieldValue,
                                         int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
     }
 
-    public static void processBooleanField(long jcInstructionId, Object instance, String fieldId, boolean fieldValue,
+    public static void processBooleanField(long jcInstructionId, Object instance, int fieldId, boolean fieldValue,
                                            int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         processField(jcInstructionId, instance, fieldId, fieldValue, concreteArgumentIndex, isCallReceiver, callParameterIndex);
     }
@@ -203,13 +197,10 @@ public class ConcolicCollector {
     public static void processArrayAccess(long jcInstructionId, Object arrayInstance, int arrayIndex, Object value,
                                           int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
-        Byte elementFlags = null;
-        HeapObjectDescriptor objectDescriptor = heapFlags.get(System.identityHashCode(arrayInstance));
+        byte elementFlags = 0;
+        HeapObjectDescriptor objectDescriptor = heapFlags.get(arrayInstance);
         if (objectDescriptor != null) {
-            elementFlags = objectDescriptor.arrayElements.get(arrayIndex);
-        }
-        if (elementFlags == null) {
-            elementFlags = 0;
+            elementFlags = objectDescriptor.getFlags(arrayIndex);
         }
         expressionFlagsBuffer |= elementFlags;
         addExpressionValueIfConcrete(elementFlags, concreteArgumentIndex, value);
@@ -268,7 +259,7 @@ public class ConcolicCollector {
         if (isCallReceiver) {
             newCallStackFrame.thisDescriptor = flags;
         } else if (callParameterIndex != -1) {
-            newCallStackFrame.arguments.put(callParameterIndex, flags);
+            newCallStackFrame.arguments[callParameterIndex] = flags;
         }
     }
 
@@ -285,35 +276,44 @@ public class ConcolicCollector {
     }
 
     public static void assignToLocalVariable(int variableIndex) {
-        stackValuesFlags.last().localVariables.put(variableIndex, expressionFlagsBuffer);
+        stackValuesFlags.last().localVariables[variableIndex] = expressionFlagsBuffer;
     }
 
     public static void assignToArgument(int argumentIndex) {
-        stackValuesFlags.last().arguments.put(argumentIndex, expressionFlagsBuffer);
+        stackValuesFlags.last().arguments[argumentIndex] = expressionFlagsBuffer;
     }
 
-    public static void assignToField(Object instance, String fieldId) {
+    public static void assignToField(Object instance, int fieldId) {
         if (instance == null) {
-            staticFieldsFlags.put(fieldId, expressionFlagsBuffer);
+            if (fieldId >= staticFieldsFlags.length) {
+                byte[] newStaticFieldsFlags = new byte[fieldId * 2];
+                System.arraycopy(staticFieldsFlags, 0, newStaticFieldsFlags, 0, staticFieldsFlags.length);
+                staticFieldsFlags = newStaticFieldsFlags;
+            }
+            staticFieldsFlags[fieldId] = expressionFlagsBuffer;
         } else {
-            int heapRef = System.identityHashCode(instance);
-            HeapObjectDescriptor objectDescriptor = heapFlags.get(heapRef);
+            HeapObjectDescriptor objectDescriptor = heapFlags.get(instance);
             if (objectDescriptor == null) {
+                if (expressionFlagsBuffer == 0) {
+                    return;
+                }
                 objectDescriptor = new HeapObjectDescriptor();
             }
-            objectDescriptor.fields.put(fieldId, expressionFlagsBuffer);
-            heapFlags.put(heapRef, objectDescriptor);
+            objectDescriptor.addFlags(fieldId, expressionFlagsBuffer);
+            heapFlags.put(instance, objectDescriptor);
         }
     }
 
     public static void assignToArray(Object arrayInstance, int index) {
-        int heapRef = System.identityHashCode(arrayInstance);
-        HeapObjectDescriptor objectDescriptor = heapFlags.get(heapRef);
+        HeapObjectDescriptor objectDescriptor = heapFlags.get(arrayInstance);
         if (objectDescriptor == null) {
+            if (expressionFlagsBuffer == 0) {
+                return;
+            }
             objectDescriptor = new HeapObjectDescriptor();
         }
-        objectDescriptor.arrayElements.put(index, expressionFlagsBuffer);
-        heapFlags.put(heapRef, objectDescriptor);
+        objectDescriptor.addFlags(index, expressionFlagsBuffer);
+        heapFlags.put(arrayInstance, objectDescriptor);
     }
 
     private static boolean isSymbolic(byte flags) {
@@ -344,14 +344,30 @@ public class ConcolicCollector {
     }
 
     private static class StackFrame {
-        HashMap<Integer, Byte> arguments = new HashMap<>();
-        HashMap<Integer, Byte> localVariables = new HashMap<>();
-        Byte thisDescriptor;
+        byte[] arguments;
+        byte[] localVariables;
+        byte thisDescriptor;
+
+        StackFrame(int argumentsNum) {
+            arguments = new byte[argumentsNum];
+        }
     }
 
     private static class HeapObjectDescriptor {
-        private final HashMap<String, Byte> fields = new HashMap<>();
-        private final HashMap<Integer, Byte> arrayElements = new HashMap<>();
+        private byte[] inhabitants = new byte[32];
+
+        void addFlags(int inhabitantId, byte flags) {
+            if (inhabitantId >= inhabitants.length) {
+                byte[] newInhabitants = new byte[inhabitantId * 2];
+                System.arraycopy(inhabitants, 0, newInhabitants, 0, inhabitants.length);
+                inhabitants = newInhabitants;
+            }
+            inhabitants[inhabitantId] = flags;
+        }
+
+        byte getFlags(int inhabitantId) {
+            return inhabitantId < inhabitants.length ? inhabitants[inhabitantId] : 0;
+        }
     }
 
     public static class ArrayList<T> {
@@ -398,9 +414,7 @@ public class ConcolicCollector {
 
         private void resize() {
             Object[] newArray = new Object[array.length * 2];
-            for (int i = 0; i < array.length; i++) {
-                newArray[i] = array[i];
-            }
+            System.arraycopy(array, 0, newArray, 0, array.length);
             array = newArray;
         }
     }
@@ -417,82 +431,76 @@ public class ConcolicCollector {
             this.table = new Entry[DEFAULT_CAPACITY];
         }
 
-        static class Entry<K, V> {
-            K key;
-            V value;
-            Entry<K, V> next;
+    private static class IdentityHashMap<K,V> {
+        private Object[] table = new Object[64];
+        public int size;
+        private int threshold = 21;
 
-            Entry(K key, V value) {
-                this.key = key;
-                this.value = value;
-                this.next = null;
+        @SuppressWarnings({"unchecked"})
+        public V get(Object key) {
+            Object[] tab = table;
+            int len = tab.length;
+            int i = hash(key, len);
+            while (true) {
+                Object item = tab[i];
+                if (item == key)
+                    return (V) tab[i + 1];
+                if (item == null)
+                    return null;
+                i = nextKeyIndex(i, len);
             }
         }
 
         public void put(K key, V value) {
-            if (size >= table.length * LOAD_FACTOR) {
-                resize();
+            Object[] tab = table;
+            int len = tab.length;
+            int i = hash(key, len);
+
+            Object item;
+            while ((item = tab[i]) != null) {
+                if (item == key) {
+                    tab[i + 1] = value;
+                    return;
+                }
+                i = nextKeyIndex(i, len);
             }
 
-            int index = getIndex(key);
-            Entry<K, V> entry = table[index];
-
-            if (entry == null) {
-                table[index] = new Entry<>(key, value);
-                size++;
-            } else {
-                while (entry.next != null) {
-                    if (entry.key.equals(key)) {
-                        entry.value = value;
-                        return;
-                    }
-                    entry = entry.next;
-                }
-                if (entry.key.equals(key)) {
-                    entry.value = value;
-                } else {
-                    entry.next = new Entry<>(key, value);
-                    size++;
-                }
-            }
+            tab[i] = key;
+            tab[i + 1] = value;
+            if (++size >= threshold)
+                resize(len);
         }
 
-        public V get(K key) {
-            int index = getIndex(key);
-            Entry<K, V> entry = table[index];
+        private void resize(int newCapacity) {
+            int newLength = newCapacity * 2;
 
-            while (entry != null) {
-                if (entry.key.equals(key)) {
-                    return entry.value;
-                }
-                entry = entry.next;
-            }
+            Object[] oldTable = table;
+            Object[] newTable = new Object[newLength];
+            threshold = newLength / 3;
 
-            return null;
-        }
-
-        private int getIndex(K key) {
-            int h;
-            int hash = (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
-            return (table.length - 1) & hash;
-        }
-
-        @SuppressWarnings({"unchecked", "rawtypes"})
-        private void resize() {
-            Entry<K, V>[] oldTable = table;
-            table = new Entry[table.length * 2];
-            size = 0;
-
-            for (Entry<K, V> entry : oldTable) {
-                while (entry != null) {
-                    put(entry.key, entry.value);
-                    entry = entry.next;
+            for (int j = 0; j < oldTable.length; j += 2) {
+                Object key = oldTable[j];
+                if (key != null) {
+                    Object value = oldTable[j+1];
+                    oldTable[j] = null;
+                    oldTable[j+1] = null;
+                    int i = hash(key, newLength);
+                    while (newTable[i] != null)
+                        i = nextKeyIndex(i, newLength);
+                    newTable[i] = key;
+                    newTable[i + 1] = value;
                 }
             }
+            table = newTable;
         }
 
-        public int size() {
-            return size;
+        private static int hash(Object x, int length) {
+            int h = System.identityHashCode(x);
+            return ((h << 1) - (h << 8)) & (length - 1);
+        }
+
+        private static int nextKeyIndex(int i, int len) {
+            return (i + 2 < len ? i + 2 : 0);
         }
     }
 }
