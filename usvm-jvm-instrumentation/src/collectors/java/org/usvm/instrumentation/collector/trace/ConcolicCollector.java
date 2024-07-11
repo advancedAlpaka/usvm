@@ -2,8 +2,14 @@ package org.usvm.instrumentation.collector.trace;
 
 public class ConcolicCollector {
     public static final ArrayList<InstructionInfo> symbolicInstructionsTrace = new ArrayList<>();
-    private static final ArrayList<StackFrame> stackValuesFlags = new ArrayList<>();
-    private static final IdentityHashMap<Object, HeapObjectDescriptor> heapFlags = new IdentityHashMap<>();
+
+    public static int stackPointer = -1;
+
+    public static byte[] thisFlagsStack = new byte[32];
+    public static byte[][] argumentsFlagsStack = new byte[32][];
+    public static byte[][] localVariablesFlagsStack = new byte[32][];
+
+    public static final IdentityHashMap<Object, HeapObjectDescriptor> heapFlags = new IdentityHashMap<>();
     private static byte[] staticFieldsFlags = new byte[32];
 
 
@@ -13,17 +19,35 @@ public class ConcolicCollector {
     private static StackFrame newCallStackFrame;
 
     public static void initializeNewCallStackFrame(int argumentsNum) {
-        newCallStackFrame = new StackFrame(argumentsNum);
+        int nextStackPointer = stackPointer + 1;
+
+        if (nextStackPointer >= thisFlagsStack.length) {
+            byte[] newThisFlagsStack = new byte[nextStackPointer * 2];
+            System.arraycopy(thisFlagsStack, 0, newThisFlagsStack, 0, thisFlagsStack.length);
+            thisFlagsStack = newThisFlagsStack;
+
+            byte[][] newArgumentsFlagsStack = new byte[nextStackPointer * 2][];
+            System.arraycopy(argumentsFlagsStack, 0, newArgumentsFlagsStack, 0, argumentsFlagsStack.length);
+            argumentsFlagsStack = newArgumentsFlagsStack;
+
+            byte[][] newLocalVariablesFlagsStack = new byte[nextStackPointer * 2][];
+            System.arraycopy(localVariablesFlagsStack, 0, newLocalVariablesFlagsStack, 0, localVariablesFlagsStack.length);
+            localVariablesFlagsStack = newLocalVariablesFlagsStack;
+        }
+
+        argumentsFlagsStack[nextStackPointer] = new byte[argumentsNum];
     }
 
     public static void onEnterFunction(int localVariablesNum) {
-        newCallStackFrame.localVariables = new byte[localVariablesNum];
-        stackValuesFlags.add(newCallStackFrame);
+        stackPointer++;
+        localVariablesFlagsStack[stackPointer] = new byte[localVariablesNum];
     }
 
     public static void onExitFunction() {
-        stackValuesFlags.removeLast();
-        if (stackValuesFlags.size == 0) {
+        argumentsFlagsStack[stackPointer] = null;
+        localVariablesFlagsStack[stackPointer] = null;
+        stackPointer--;
+        if (stackPointer == -1) {
             saveLastInstructionIfSymbolic();
         }
     }
@@ -31,7 +55,7 @@ public class ConcolicCollector {
     public static void processLocalVariable(long jcInstructionId, int variableIndex, Object variableValue,
                                             int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
-        byte variableFlags = stackValuesFlags.last().localVariables[variableIndex];
+        byte variableFlags = localVariablesFlagsStack[stackPointer][variableIndex];
         expressionFlagsBuffer |= variableFlags;
         addExpressionValueIfConcrete(variableFlags, concreteArgumentIndex, variableValue);
         updateCallStackFrameIfNeeded(variableFlags, isCallReceiver, callParameterIndex);
@@ -80,7 +104,7 @@ public class ConcolicCollector {
     public static void processArgument(long jcInstructionId, int argumentIndex, Object argumentValue,
                                        int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
-        byte argumentFlags = stackValuesFlags.last().arguments[argumentIndex];
+        byte argumentFlags = argumentsFlagsStack[stackPointer][argumentIndex];
         expressionFlagsBuffer |= argumentFlags;
         addExpressionValueIfConcrete(argumentFlags, concreteArgumentIndex, argumentValue);
         updateCallStackFrameIfNeeded(argumentFlags, isCallReceiver, callParameterIndex);
@@ -129,7 +153,7 @@ public class ConcolicCollector {
     public static void processThis(long jcInstructionId, Object thisValue,
                                    int concreteArgumentIndex, boolean isCallReceiver, int callParameterIndex) {
         updateLastInstructionIfNeeded(jcInstructionId);
-        byte thisFlags = stackValuesFlags.last().thisDescriptor;
+        byte thisFlags = thisFlagsStack[stackPointer];
         expressionFlagsBuffer |= thisFlags;
         addExpressionValueIfConcrete(thisFlags, concreteArgumentIndex, thisValue);
         updateCallStackFrameIfNeeded(thisFlags, isCallReceiver, callParameterIndex);
@@ -256,10 +280,11 @@ public class ConcolicCollector {
     }
 
     private static void updateCallStackFrameIfNeeded(Byte flags, boolean isCallReceiver, int callParameterIndex) {
+        int nextStackPointer = stackPointer + 1;
         if (isCallReceiver) {
-            newCallStackFrame.thisDescriptor = flags;
+            thisFlagsStack[nextStackPointer] = flags;
         } else if (callParameterIndex != -1) {
-            newCallStackFrame.arguments[callParameterIndex] = flags;
+            argumentsFlagsStack[nextStackPointer][callParameterIndex] = flags;
         }
     }
 
@@ -276,11 +301,11 @@ public class ConcolicCollector {
     }
 
     public static void assignToLocalVariable(int variableIndex) {
-        stackValuesFlags.last().localVariables[variableIndex] = expressionFlagsBuffer;
+        localVariablesFlagsStack[stackPointer][variableIndex] = expressionFlagsBuffer;
     }
 
     public static void assignToArgument(int argumentIndex) {
-        stackValuesFlags.last().arguments[argumentIndex] = expressionFlagsBuffer;
+        argumentsFlagsStack[stackPointer][argumentIndex] = expressionFlagsBuffer;
     }
 
     public static void assignToField(Object instance, int fieldId) {
@@ -353,7 +378,7 @@ public class ConcolicCollector {
         }
     }
 
-    private static class HeapObjectDescriptor {
+    public static class HeapObjectDescriptor {
         private byte[] inhabitants = new byte[32];
 
         void addFlags(int inhabitantId, byte flags) {
@@ -417,7 +442,6 @@ public class ConcolicCollector {
             System.arraycopy(array, 0, newArray, 0, array.length);
             array = newArray;
         }
-    }
 
     public static class HashMap<K, V> {
         private static final int DEFAULT_CAPACITY = 16;
