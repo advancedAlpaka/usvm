@@ -24,6 +24,7 @@ class JcRuntimeConcolicInstrumenter(
     private val long = jcClasspath.long.getTypename()
     private val boolean = jcClasspath.boolean.getTypename()
     private val objectType = jcClasspath.objectType.getTypename()
+    private val throwable = TypeNameImpl(java.lang.Throwable::class.java.name)
     private val void = jcClasspath.void.getTypename()
 
     private val byteArray = with(jcClasspath) { arrayTypeOf(byte).getTypename() }
@@ -129,30 +130,12 @@ class JcRuntimeConcolicInstrumenter(
                     OperandsProcessor(encodedInst).getProcessOperandsInstructions(rawJcInstruction.operands)
 
                 instrumentedInstructionsList.insertBefore(rawJcInstruction,  processOperandsInstructions)
-
-                val onExitFunction = buildList {
-                    add(JcRawAssignInst(owner,
-                        JcRawArrayAccess(argumentsFlagsStack, stackPointer, byteArray),
-                        JcRawNull()
-                    ))
-
-                    add(JcRawAssignInst(owner,
-                        JcRawArrayAccess(localVariablesFlagsStack, stackPointer, byteArray),
-                        JcRawNull()
-                    ))
-
-                    add(JcRawAssignInst(owner,
-                        stackPointer,
-                        JcRawSubExpr(int, stackPointer, JcRawInt(1))
-                    ))
-                }
-                instrumentedInstructionsList.insertBefore(rawJcInstruction, onExitFunction)
+                instrumentedInstructionsList.insertBefore(rawJcInstruction, getOnExitFunctionInstructions())
             }
 
             is JcRawIfInst,
             is JcRawSwitchInst,
             is JcRawThrowInst,
-            is JcRawCatchInst,
             is JcRawEnterMonitorInst,
             is JcRawExitMonitorInst -> {
                 val processOperandsInstructions =
@@ -160,10 +143,28 @@ class JcRuntimeConcolicInstrumenter(
                 instrumentedInstructionsList.insertBefore(rawJcInstruction,  processOperandsInstructions)
             }
 
+            is JcRawCatchInst,
             is JcRawGotoInst,
             is JcRawLineNumberInst,
             is JcRawLabelInst -> {}
         }
+    }
+
+    private fun getOnExitFunctionInstructions() = buildList {
+        add(JcRawAssignInst(owner,
+            JcRawArrayAccess(argumentsFlagsStack, stackPointer, byteArray),
+            JcRawNull()
+        ))
+
+        add(JcRawAssignInst(owner,
+            JcRawArrayAccess(localVariablesFlagsStack, stackPointer, byteArray),
+            JcRawNull()
+        ))
+
+        add(JcRawAssignInst(owner,
+            stackPointer,
+            JcRawSubExpr(int, stackPointer, JcRawInt(1))
+        ))
     }
 
     private fun createAssignToHeapObjectDescriptorInstructions(
@@ -261,6 +262,24 @@ class JcRuntimeConcolicInstrumenter(
 
             instrumentedInstructionsList.insertBefore(firstMethodInstruction, variablesStackFrameAllocation)
         }
+
+        val startLabel = if (jcMethod.isConstructor) "#1" else "#0"
+        val finallyBlockEntry = JcRawCatchEntry(
+            throwable,
+            JcRawLabelRef(startLabel),
+            JcRawLabelRef("#${labelsNum}")
+        )
+        val handlerLabel = newLabelName()
+        val catchVar = creatLocalVar(throwable)
+
+        val exceptionsHandler = buildList {
+            add(JcRawLabelInst(owner, handlerLabel))
+            add(JcRawCatchInst(owner, catchVar, JcRawLabelRef(handlerLabel), listOf(finallyBlockEntry)))
+            addAll(getOnExitFunctionInstructions())
+            add(JcRawThrowInst(owner, catchVar))
+        }
+
+        instrumentedInstructionsList.insertAfter(instrumentedInstructionsList.last(), exceptionsHandler)
     }
 
     private inner class OperandsProcessor(private val encodedInst: Long) {
@@ -544,12 +563,13 @@ class JcRuntimeConcolicInstrumenter(
 
     private var localVariablesNum = 0
     private fun MutableList<JcRawInst>.newLocalVar(type: TypeName, initialValue: JcRawExpr? = null): JcRawLocalVar {
-        val localVar = JcRawLocalVar("%${localVariablesNum++}", type)
+        val localVar = creatLocalVar(type)
         if (initialValue != null) {
             add(JcRawAssignInst(owner, localVar, initialValue))
         }
         return localVar
     }
+    private fun creatLocalVar(type: TypeName) = JcRawLocalVar("%${localVariablesNum++}", type)
 
     private var labelsNum = 0
     private fun newLabelName() = "#${labelsNum++}"
