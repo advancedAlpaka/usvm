@@ -10,11 +10,8 @@ public class ConcolicCollector {
     public static byte[][] argumentsFlagsStack = new byte[32][];
     public static byte[][] localVariablesFlagsStack = new byte[32][];
 
-    public static final IdentityHashMap<Object, HeapObjectDescriptor> heapFlags = new IdentityHashMap<>();
+    public static IdentityHashMap<Object, HeapObjectDescriptor> heapFlags = new IdentityHashMap<>();
     public static byte[] staticFieldsFlags = new byte[32];
-
-    private static InstructionInfo lastInstruction;
-    private static byte expressionFlagsBuffer;
 
     public static void resizeFlagsStacks() {
         int newLength = (stackPointer + 1) * 2;
@@ -47,7 +44,7 @@ public class ConcolicCollector {
     public static class InstructionInfo {
         public long jcInstructionId;
 
-        private int argumentsPointer = -1;
+        public int argumentsPointer = -1;
         public ConcreteArgument[] concreteArguments = new ConcreteArgument[8];
 
         public void addConcreteArgument(int index, Object value) {

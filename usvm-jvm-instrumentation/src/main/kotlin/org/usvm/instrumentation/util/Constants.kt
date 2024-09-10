@@ -20,6 +20,8 @@ object InstrumentationModuleConstants {
     val maxDepthOfDescriptorConstruction = 5
     //Number of stacktrace elements for exception construction
     val maxStackTraceElements = 10
+    // Enable concolic mode instrumentation
+    val concolicMode = true
 
     const val nameForExistingButNullString = "USVM_GENERATED_NULL_STRING"
 

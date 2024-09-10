@@ -11,7 +11,7 @@ import org.usvm.instrumentation.util.getTypename
 
 class JcRuntimeConcolicInstrumenter(
     override val jcClasspath: JcClasspath
-) : JcRuntimeTraceInstrumenter(jcClasspath) {
+) : JcRuntimeTraceInstrumenter(jcClasspath, JcConcolicTracer) {
 
     override val instrumentConstructors = true
 

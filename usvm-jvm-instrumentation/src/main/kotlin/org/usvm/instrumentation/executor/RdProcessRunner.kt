@@ -143,11 +143,13 @@ class RdProcessRunner(
         return when (executionResult.type) {
             ExecutionResultType.UTestExecutionInitFailedResult -> UTestExecutionInitFailedResult(
                 cause = executionResult.cause as? UTestExceptionDescriptor ?: error("deserialization failed"),
-                trace = executionResult.trace?.let { deserializeTrace(it, coveredClasses) }
+                trace = executionResult.trace?.let { deserializeTrace(it, coveredClasses) },
+                concreteValues = executionResult.concreteValues?.let { deserializeConcreteValues(it) }
             )
 
             ExecutionResultType.UTestExecutionSuccessResult -> UTestExecutionSuccessResult(
                 trace = executionResult.trace?.let { deserializeTrace(it, coveredClasses) },
+                concreteValues = executionResult.concreteValues?.let { deserializeConcreteValues(it) },
                 result = executionResult.result,
                 initialState = executionResult.initialState?.let { deserializeExecutionState(it) }
                     ?: error("deserialization failed"),
@@ -157,9 +159,8 @@ class RdProcessRunner(
 
             ExecutionResultType.UTestExecutionExceptionResult -> UTestExecutionExceptionResult(
                 cause = executionResult.cause as? UTestExceptionDescriptor ?: error("deserialization failed"),
-                trace = executionResult.trace?.let {
-                    deserializeTrace(it, coveredClasses)
-                },
+                trace = executionResult.trace?.let { deserializeTrace(it, coveredClasses) },
+                concreteValues = executionResult.concreteValues?.let { deserializeConcreteValues(it) },
                 initialState = executionResult.initialState?.let { deserializeExecutionState(it) }
                     ?: error("deserialization failed"),
                 resultState = executionResult.resultState?.let { deserializeExecutionState(it) }
@@ -205,6 +206,9 @@ class RdProcessRunner(
                     ?: error("Deserialization error")
             }
         }
+
+    private fun deserializeConcreteValues(concreteValues: List<List<IndexToValue>>) =
+        concreteValues.map { it.associate { (index, value) -> index to value } }
 
     fun destroy() {
         lifetime.terminate()

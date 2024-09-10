@@ -7,7 +7,7 @@ interface JcInstrumenterFactory<T: JcInstrumenter> {
 }
 
 class JcRuntimeTraceInstrumenterFactory : JcInstrumenterFactory<JcRuntimeTraceInstrumenter> {
-    override fun create(jcClasspath: JcClasspath): JcRuntimeTraceInstrumenter = JcRuntimeTraceInstrumenter(jcClasspath)
+    override fun create(jcClasspath: JcClasspath): JcRuntimeTraceInstrumenter = JcRuntimeTraceInstrumenter(jcClasspath, JcInstructionTracer)
 }
 
 class JcRuntimeConcolicInstrumenterFactory : JcInstrumenterFactory<JcRuntimeConcolicInstrumenter> {

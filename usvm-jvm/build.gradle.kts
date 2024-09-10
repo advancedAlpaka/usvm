@@ -26,6 +26,7 @@ val approximationsVersion = "d9d6f30985"
 
 dependencies {
     implementation(project(":usvm-core"))
+    implementation(project(":usvm-jvm-instrumentation"))
 
     implementation("org.jacodb:jacodb-core:${Versions.jcdb}")
     implementation("org.jacodb:jacodb-analysis:${Versions.jcdb}")

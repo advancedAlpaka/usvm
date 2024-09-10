@@ -17,7 +17,8 @@ import org.usvm.instrumentation.util.replace
  * Collecting trace and information about static access
  */
 open class JcRuntimeTraceInstrumenter(
-    override val jcClasspath: JcClasspath
+    override val jcClasspath: JcClasspath,
+    private val tracer: Tracer<*>
 ) : JcInstrumenter, AbstractFullRawExprSetCollector() {
 
     protected open val instrumentConstructors = false
@@ -55,20 +56,22 @@ open class JcRuntimeTraceInstrumenter(
         val invocation = traceHelper.createTraceMethodCall(encodedInst, coveredInstructionMethodName)
         instrumentedInstructionsList.insertBefore(rawJcInstruction, invocation)
 
-        getStaticFieldRefs(rawJcInstruction)
-        rawStaticsSet.forEach { jcRawFieldRef ->
-            val encodedRef = JcInstructionTracer.encodeStaticFieldAccess(
-                jcRawFieldRef, StaticFieldAccessType.SET, jcClasspath
-            )
-            val traceMethodCall = traceHelper.createTraceMethodCall(encodedRef, staticFieldAccessedMethodName)
-            instrumentedInstructionsList.insertBefore(rawJcInstruction, traceMethodCall)
-        }
-        rawStaticsGet.forEach { jcRawFieldRef ->
-            val encodedRef = JcInstructionTracer.encodeStaticFieldAccess(
-                jcRawFieldRef, StaticFieldAccessType.GET, jcClasspath
-            )
-            val traceMethodCall = traceHelper.createTraceMethodCall(encodedRef, staticFieldAccessedMethodName)
-            instrumentedInstructionsList.insertBefore(rawJcInstruction, traceMethodCall)
+        if (tracer is JcInstructionTracer) {
+            getStaticFieldRefs(rawJcInstruction)
+            rawStaticsSet.forEach { jcRawFieldRef ->
+                val encodedRef = tracer.encodeStaticFieldAccess(
+                    jcRawFieldRef, StaticFieldAccessType.SET, jcClasspath
+                )
+                val traceMethodCall = traceHelper.createTraceMethodCall(encodedRef, staticFieldAccessedMethodName)
+                instrumentedInstructionsList.insertBefore(rawJcInstruction, traceMethodCall)
+            }
+            rawStaticsGet.forEach { jcRawFieldRef ->
+                val encodedRef = tracer.encodeStaticFieldAccess(
+                    jcRawFieldRef, StaticFieldAccessType.GET, jcClasspath
+                )
+                val traceMethodCall = traceHelper.createTraceMethodCall(encodedRef, staticFieldAccessedMethodName)
+                instrumentedInstructionsList.insertBefore(rawJcInstruction, traceMethodCall)
+            }
         }
     }
 
@@ -80,7 +83,7 @@ open class JcRuntimeTraceInstrumenter(
         val instrumentedJcInstructionsList = jcMethod.rawInstList.toMutableList()
         atMethodStart(jcMethod, instrumentedJcInstructionsList)
         for (i in jcInstructionsList.indices) {
-            val encodedInst = JcInstructionTracer.encode(jcInstructionsList[i])
+            val encodedInst = tracer.encode(jcInstructionsList[i])
             processInstruction(encodedInst, rawJcInstructionsList[i], instrumentedJcInstructionsList)
         }
         return MethodNodeBuilder(jcMethod, instrumentedJcInstructionsList).build()

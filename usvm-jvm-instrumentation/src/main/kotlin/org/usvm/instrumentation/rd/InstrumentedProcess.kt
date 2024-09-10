@@ -16,12 +16,15 @@ import org.jacodb.api.JcClasspath
 import org.jacodb.impl.features.InMemoryHierarchy
 import org.jacodb.impl.jacodb
 import org.usvm.instrumentation.generated.models.*
+import org.usvm.instrumentation.instrumentation.JcConcolicTracer
 import org.usvm.instrumentation.instrumentation.JcInstructionTracer
+import org.usvm.instrumentation.instrumentation.Tracer
 import org.usvm.instrumentation.serializer.SerializationContext
 import org.usvm.instrumentation.serializer.UTestInstSerializer.Companion.registerUTestInstSerializer
 import org.usvm.instrumentation.serializer.UTestValueDescriptorSerializer.Companion.registerUTestValueDescriptorSerializer
 import org.usvm.instrumentation.testcase.UTest
 import org.usvm.instrumentation.testcase.api.*
+import org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor
 import org.usvm.instrumentation.util.*
 import java.io.File
 import kotlin.time.Duration
@@ -36,6 +39,7 @@ class InstrumentedProcess private constructor() {
     private lateinit var serializationCtx: SerializationContext
     private lateinit var fileClassPath: List<File>
     private lateinit var ucp: URLClassPathLoader
+    private lateinit var tracer: Tracer<*>
 
     private lateinit var uTestExecutor: UTestExecutor
 
@@ -60,6 +64,7 @@ class InstrumentedProcess private constructor() {
             addOption("cp", true, "Project class path")
             addOption("t", true, "Process timeout in seconds")
             addOption("p", true, "Rd port number")
+            addOption("cm", false, "Concolic mode")
         }
         val parser = DefaultParser()
         val cmd = parser.parse(options, args)
@@ -68,7 +73,7 @@ class InstrumentedProcess private constructor() {
             ?: error("Specify timeout in seconds")
         val port = cmd.getOptionValue("p").toIntOrNull() ?: error("Specify rd port number")
         val def = LifetimeDefinition()
-        initProcess(classPath)
+        initProcess(classPath, cmd.hasOption("cm"))
         def.terminateOnException {
             def.launch {
                 checkAliveLoop(def, timeout)
@@ -80,7 +85,7 @@ class InstrumentedProcess private constructor() {
         }
     }
 
-    private suspend fun initProcess(classpath: String) {
+    private suspend fun initProcess(classpath: String, concolicMode: Boolean) {
         fileClassPath = classpath.split(File.pathSeparatorChar).map { File(it) }
         val db = jacodb {
             loadByteCode(fileClassPath)
@@ -91,7 +96,8 @@ class InstrumentedProcess private constructor() {
         jcClasspath = db.classpath(fileClassPath)
         serializationCtx = SerializationContext(jcClasspath)
         ucp = URLClassPathLoader(fileClassPath)
-        uTestExecutor = UTestExecutor(jcClasspath, ucp)
+        tracer = if (concolicMode) JcConcolicTracer else JcInstructionTracer
+        uTestExecutor = UTestExecutor(jcClasspath, ucp, tracer)
     }
 
     private suspend fun initiate(lifetime: Lifetime, port: Int) {
@@ -139,13 +145,14 @@ class InstrumentedProcess private constructor() {
     }
 
     private fun serializeExecutionResult(uTestExecutionResult: UTestExecutionResult): ExecutionResult {
-        val classesToId = JcInstructionTracer.getEncodedClasses().entries.map { ClassToId(it.key.name, it.value) }
+        val classesToId = tracer.getEncodedClasses().entries.map { ClassToId(it.key.name, it.value) }
         return when (uTestExecutionResult) {
             is UTestExecutionExceptionResult -> ExecutionResult(
                 type = ExecutionResultType.UTestExecutionExceptionResult,
                 classes = classesToId,
                 cause = uTestExecutionResult.cause,
-                trace = JcInstructionTracer.coveredInstructionsIds(),
+                trace = tracer.coveredInstructionsIds(),
+                concreteValues = uTestExecutionResult.concreteValues?.let { serializeConcreteValues(it) },
                 initialState = serializeExecutionState(uTestExecutionResult.initialState),
                 result = null,
                 resultState = serializeExecutionState(uTestExecutionResult.resultState),
@@ -156,6 +163,7 @@ class InstrumentedProcess private constructor() {
                 classes = classesToId,
                 cause = uTestExecutionResult.cause,
                 trace = null,
+                concreteValues = null,
                 initialState = null,
                 result = null,
                 resultState = null
@@ -165,7 +173,8 @@ class InstrumentedProcess private constructor() {
                 type = ExecutionResultType.UTestExecutionInitFailedResult,
                 classes = classesToId,
                 cause = uTestExecutionResult.cause,
-                trace = JcInstructionTracer.coveredInstructionsIds(),
+                trace = tracer.coveredInstructionsIds(),
+                concreteValues = uTestExecutionResult.concreteValues?.let { serializeConcreteValues(it) },
                 initialState = null,
                 result = null,
                 resultState = null
@@ -174,7 +183,8 @@ class InstrumentedProcess private constructor() {
             is UTestExecutionSuccessResult -> ExecutionResult(
                 type = ExecutionResultType.UTestExecutionSuccessResult,
                 classes = classesToId,
-                trace = JcInstructionTracer.coveredInstructionsIds(),
+                trace = tracer.coveredInstructionsIds(),
+                concreteValues = uTestExecutionResult.concreteValues?.let { serializeConcreteValues(it) },
                 initialState = serializeExecutionState(uTestExecutionResult.initialState),
                 result = uTestExecutionResult.result,
                 resultState = serializeExecutionState(uTestExecutionResult.resultState),
@@ -186,6 +196,7 @@ class InstrumentedProcess private constructor() {
                 classes = classesToId,
                 cause = uTestExecutionResult.cause,
                 trace = null,
+                concreteValues = null,
                 initialState = null,
                 result = null,
                 resultState = null
@@ -198,6 +209,10 @@ class InstrumentedProcess private constructor() {
             SerializedStaticField("${jcField.enclosingClass.name}.${jcField.name}", descriptor)
         }
         return ExecutionStateSerialized(executionState.instanceDescriptor, executionState.argsDescriptors, statics)
+    }
+
+    private fun serializeConcreteValues(concreteValues: List<Map<Int, UTestValueDescriptor>>): List<List<IndexToValue>> {
+        return concreteValues.map { it.entries.map { (k, v) -> IndexToValue(k, v) } }
     }
 
     private fun callUTest(uTest: UTest): UTestExecutionResult =

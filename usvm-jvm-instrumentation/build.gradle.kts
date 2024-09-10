@@ -49,6 +49,10 @@ dependencies {
     implementation("com.jetbrains.rd:rd-core:${Versions.rd}")
     implementation("commons-cli:commons-cli:1.5.0")
     implementation("com.jetbrains.rd:rd-gen:${Versions.rd}")
+
+    testImplementation(project(":usvm-core"))
+    testImplementation(project(":usvm-jvm"))
+    testImplementation(project(":usvm-util"))
 }
 
 tasks {

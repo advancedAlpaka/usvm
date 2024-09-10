@@ -33,7 +33,8 @@ data class UTestExecutionTimedOutResult(
  */
 data class UTestExecutionInitFailedResult(
     val cause: UTestExceptionDescriptor,
-    val trace: List<JcInst>?
+    val trace: List<JcInst>?,
+    val concreteValues: List<Map<Int, UTestValueDescriptor>>?
 ): UTestExecutionResult()
 
 /**
@@ -45,6 +46,7 @@ data class UTestExecutionInitFailedResult(
  */
 data class UTestExecutionSuccessResult(
     val trace: List<JcInst>?,
+    val concreteValues: List<Map<Int, UTestValueDescriptor>>?,
     val result: UTestValueDescriptor?,
     val initialState: UTestExecutionState,
     val resultState: UTestExecutionState
@@ -58,6 +60,7 @@ data class UTestExecutionSuccessResult(
 data class UTestExecutionExceptionResult(
     val cause: UTestExceptionDescriptor,
     val trace: List<JcInst>?,
+    val concreteValues: List<Map<Int, UTestValueDescriptor>>?,
     val initialState: UTestExecutionState,
     val resultState: UTestExecutionState
 ): UTestExecutionResult()
