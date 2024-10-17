@@ -91,9 +91,12 @@ import org.usvm.UHeapRef
 import org.usvm.UNullRef
 import org.usvm.USort
 import org.usvm.api.allocateArrayInitialized
+import org.usvm.api.allocateConcreteRef
+import org.usvm.api.writeArrayIndex
 import org.usvm.collection.array.UArrayIndexLValue
 import org.usvm.collection.array.length.UArrayLengthLValue
 import org.usvm.collection.field.UFieldLValue
+import org.usvm.instrumentation.testcase.descriptor.*
 import org.usvm.machine.JcContext
 import org.usvm.machine.JcMachineOptions
 import org.usvm.machine.USizeSort
@@ -135,13 +138,19 @@ class JcExprResolver(
     mkTypeRef: (JcType) -> UConcreteHeapRef,
     mkStringConstRef: (String) -> UConcreteHeapRef,
     private val classInitializerAnalysisAlwaysRequiredForType: (JcRefType) -> Boolean,
+    private val concreteValues: Map<JcExpr, UTestValueDescriptor>?,
+    objectsCache: MutableMap<UTestValueDescriptor, UConcreteHeapRef>,
+    mkArrayRef: (UTestArrayDescriptor) -> UConcreteHeapRef
 ) : JcExprVisitor<UExpr<out USort>?> {
     val simpleValueResolver: JcSimpleValueResolver = JcSimpleValueResolver(
         ctx,
         scope,
         localToIdx,
         mkTypeRef,
-        mkStringConstRef
+        mkStringConstRef,
+        concreteValues,
+        objectsCache,
+        mkArrayRef
     )
 
     /**
@@ -491,6 +500,8 @@ class JcExprResolver(
     // region jc complex values
 
     override fun visitJcFieldRef(value: JcFieldRef): UExpr<out USort>? {
+        concreteValues?.get(value)?.let { return with (simpleValueResolver) { it.toUExpr() } }
+
         val lValue = resolveFieldRef(value.instance, value.field) ?: return null
         val expr = scope.calcOnState { memory.read(lValue) }
 
@@ -500,6 +511,8 @@ class JcExprResolver(
     }
 
     override fun visitJcArrayAccess(value: JcArrayAccess): UExpr<out USort>? {
+        concreteValues?.get(value)?.let { return with (simpleValueResolver) { it.toUExpr() } }
+
         val lValue = resolveArrayAccess(value.array, value.index) ?: return null
         val expr = scope.calcOnState { memory.read(lValue) }
 
@@ -1020,10 +1033,15 @@ class JcSimpleValueResolver(
     private val localToIdx: (JcMethod, JcLocal) -> Int,
     private val mkTypeRef: (JcType) -> UConcreteHeapRef,
     private val mkStringConstRef: (String) -> UConcreteHeapRef,
+    private val concreteValues: Map<JcExpr, UTestValueDescriptor>?,
+    private val objectsCache: MutableMap<UTestValueDescriptor, UConcreteHeapRef>,
+    private val mkArrayRef: (UTestArrayDescriptor) -> UConcreteHeapRef
 ) : JcExprVisitor<UExpr<out USort>> {
-    override fun visitJcArgument(value: JcArgument): UExpr<out USort> = with(ctx) {
+    override fun visitJcArgument(value: JcArgument): UExpr<out USort> {
+        concreteValues?.get(value)?.let { return it.toUExpr() }
+
         val ref = resolveLocal(value)
-        scope.calcOnState { memory.read(ref) }
+        return scope.calcOnState { memory.read(ref) }
     }
 
     override fun visitJcBool(value: JcBool): UExpr<out USort> = with(ctx) {
@@ -1114,14 +1132,18 @@ class JcSimpleValueResolver(
         TODO("Method type")
     }
 
-    override fun visitJcLocalVar(value: JcLocalVar): UExpr<out USort> = with(ctx) {
+    override fun visitJcLocalVar(value: JcLocalVar): UExpr<out USort> {
+        concreteValues?.get(value)?.let { return it.toUExpr() }
+
         val ref = resolveLocal(value)
-        scope.calcOnState { memory.read(ref) }
+        return scope.calcOnState { memory.read(ref) }
     }
 
-    override fun visitJcThis(value: JcThis): UExpr<out USort> = with(ctx) {
+    override fun visitJcThis(value: JcThis): UExpr<out USort> {
+        concreteValues?.get(value)?.let { return it.toUExpr() }
+
         val ref = resolveLocal(value)
-        scope.calcOnState { memory.read(ref) }
+        return scope.calcOnState { memory.read(ref) }
     }
 
     override fun visitExternalJcExpr(expr: JcExpr): UExpr<out USort> =
@@ -1255,4 +1277,59 @@ class JcSimpleValueResolver(
         scope.calcOnState {
             mkStringConstRef(value)
         }
+
+    fun UTestValueDescriptor.toUExpr(): UExpr<out USort> = when(this) {
+        is UTestConstantDescriptor.Null -> ctx.nullRef
+        is UTestConstantDescriptor.Boolean -> ctx.mkBool(value)
+        is UTestConstantDescriptor.Byte -> with(ctx) { mkBv(value, byteSort) }
+        is UTestConstantDescriptor.Char -> with(ctx) { mkBv(value.code, charSort) }
+        is UTestConstantDescriptor.Double -> with(ctx) { mkFp(value, doubleSort) }
+        is UTestConstantDescriptor.Float -> with(ctx) { mkFp(value, floatSort) }
+        is UTestConstantDescriptor.Int -> with(ctx) { mkBv(value, integerSort) }
+        is UTestConstantDescriptor.Long -> with(ctx) { mkBv(value, longSort) }
+        is UTestConstantDescriptor.Short -> with(ctx) { mkBv(value, shortSort) }
+
+        is UTestConstantDescriptor.String -> visitJcStringConstant(JcStringConstant(value, ctx.stringType))
+
+        is UTestClassDescriptor -> resolveClassRef(classType)
+        is UTestCyclicReferenceDescriptor ->
+            objectsCache.entries.first { (it.key as? UTestRefDescriptor)?.refId == refId }.value
+
+        is UTestArrayDescriptor -> scope.calcOnState {
+            val arrayDescriptor = this@toUExpr
+            val array = mkArrayRef(arrayDescriptor)
+            arrayDescriptor.value.forEachIndexed { i, value ->
+                val valueExpression =  value.toUExpr()
+                memory.writeArrayIndex(
+                    ref = array,
+                    index = ctx.mkSizeExpr(i),
+                    type = arrayDescriptor.type,
+                    sort = valueExpression.sort,
+                    value = valueExpression.uncheckedCast(),
+                    guard = ctx.trueExpr
+                )
+            }
+
+            array
+        }
+
+        is UTestEnumValueDescriptor -> TODO("support enums")
+        is UTestExceptionDescriptor -> TODO("support exceptions descriptors")
+
+        is UTestObjectDescriptor -> scope.calcOnState {
+            val objectDescriptor = this@toUExpr
+            val ref =  objectsCache.getOrPut(objectDescriptor) { ctx.allocateConcreteRef() }
+
+            for ((field, fieldDescriptor) in objectDescriptor.fields) {
+                val fieldLValue = UFieldLValue(ctx.addressSort, ref, field)
+
+                memory.types.allocate(ref.address, fieldDescriptor.type)
+
+                val fieldValue = fieldDescriptor.toUExpr()
+                memory.write(fieldLValue, fieldValue)
+            }
+
+            ref
+        }
+    }
 }

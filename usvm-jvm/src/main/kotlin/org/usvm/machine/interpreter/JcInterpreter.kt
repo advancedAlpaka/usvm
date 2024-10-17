@@ -9,45 +9,20 @@ import org.jacodb.api.JcMethod
 import org.jacodb.api.JcPrimitiveType
 import org.jacodb.api.JcRefType
 import org.jacodb.api.JcType
-import org.jacodb.api.cfg.JcArgument
-import org.jacodb.api.cfg.JcAssignInst
-import org.jacodb.api.cfg.JcCallInst
-import org.jacodb.api.cfg.JcCatchInst
-import org.jacodb.api.cfg.JcEnterMonitorInst
-import org.jacodb.api.cfg.JcEqExpr
-import org.jacodb.api.cfg.JcExitMonitorInst
-import org.jacodb.api.cfg.JcGotoInst
-import org.jacodb.api.cfg.JcIfInst
-import org.jacodb.api.cfg.JcInst
-import org.jacodb.api.cfg.JcInstList
-import org.jacodb.api.cfg.JcInstRef
-import org.jacodb.api.cfg.JcLocal
-import org.jacodb.api.cfg.JcLocalVar
-import org.jacodb.api.cfg.JcReturnInst
-import org.jacodb.api.cfg.JcSwitchInst
-import org.jacodb.api.cfg.JcThis
-import org.jacodb.api.cfg.JcThrowInst
+import org.jacodb.api.cfg.*
 import org.jacodb.api.ext.boolean
 import org.jacodb.api.ext.cfg.callExpr
 import org.jacodb.api.ext.ifArrayGetElementType
 import org.jacodb.api.ext.isEnum
 import org.jacodb.api.ext.toType
-import org.usvm.ForkCase
-import org.usvm.StepResult
-import org.usvm.StepScope
-import org.usvm.UBoolExpr
-import org.usvm.UConcreteHeapRef
-import org.usvm.UExpr
-import org.usvm.UHeapRef
-import org.usvm.UInterpreter
-import org.usvm.USort
-import org.usvm.api.allocateStaticRef
-import org.usvm.api.evalTypeEquals
-import org.usvm.api.mapTypeStream
+import org.usvm.*
+import org.usvm.api.*
 import org.usvm.api.targets.JcTarget
 import org.usvm.collection.array.UArrayIndexLValue
 import org.usvm.collection.field.UFieldLValue
 import org.usvm.forkblacklists.UForkBlackList
+import org.usvm.instrumentation.testcase.descriptor.UTestArrayDescriptor
+import org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor
 import org.usvm.machine.JcApplicationGraph
 import org.usvm.machine.JcConcreteMethodCallInst
 import org.usvm.machine.JcContext
@@ -81,6 +56,7 @@ import org.usvm.util.outerClassInstanceField
 import org.usvm.util.write
 import org.usvm.utils.logAssertFailure
 import org.usvm.utils.onStateDeath
+import java.util.IdentityHashMap
 
 typealias JcStepScope = StepScope<JcState, JcType, JcInst, JcContext>
 
@@ -93,6 +69,8 @@ class JcInterpreter(
     private val options: JcMachineOptions,
     private val observer: JcInterpreterObserver? = null,
     var forkBlackList: UForkBlackList<JcState, JcInst> = UForkBlackList.createDefault(),
+    private val concolicTrace: List<JcInst>? = null,
+    private val concreteValues: List<Map<Int, UTestValueDescriptor>>? = null
 ) : UInterpreter<JcState>() {
 
     companion object {
@@ -192,13 +170,13 @@ class JcInterpreter(
 
         val blockToFork: (JcCatchInst) -> (JcState) -> Unit = { catchInst: JcCatchInst ->
             block@{ state: JcState ->
-                val lValue = exprResolverWithScope(scope).resolveLValue(catchInst.throwable) ?: return@block
+                val lValue = exprResolverWithScope(scope, lastStmt).resolveLValue(catchInst.throwable) ?: return@block
                 val exceptionResult = state.methodResult as JcMethodResult.JcException
 
                 state.memory.write(lValue, exceptionResult.address)
 
                 state.methodResult = JcMethodResult.NoCall
-                state.newStmt(catchInst.nextStmt)
+                state.newStmt(catchInst.nextStmt())
             }
         }
 
@@ -232,7 +210,7 @@ class JcInterpreter(
     private val typeSelector = JcFixedInheritorsNumberTypeSelector()
 
     private fun visitMethodCall(scope: JcStepScope, stmt: JcMethodCallBaseInst) {
-        val exprResolver = exprResolverWithScope(scope)
+        val exprResolver = exprResolverWithScope(scope, stmt)
         val simpleValueResolver = exprResolver.simpleValueResolver
 
         val method = stmt.method
@@ -381,7 +359,7 @@ class JcInterpreter(
     }
 
     private fun visitAssignInst(scope: JcStepScope, stmt: JcAssignInst) {
-        val exprResolver = exprResolverWithScope(scope)
+        val exprResolver = exprResolverWithScope(scope, stmt)
 
 
         stmt.callExpr?.let {
@@ -405,7 +383,7 @@ class JcInterpreter(
         checkArrayStoreException(lvalue, expr, exprResolver, scope) ?: return
 
         scope.doWithState {
-            val nextStmt = stmt.nextStmt
+            val nextStmt = stmt.nextStmt()
             memory.write(lvalue, expr)
             newStmt(nextStmt)
         }
@@ -474,7 +452,7 @@ class JcInterpreter(
     }
 
     private fun visitIfStmt(scope: JcStepScope, stmt: JcIfInst) {
-        val exprResolver = exprResolverWithScope(scope)
+        val exprResolver = exprResolverWithScope(scope, stmt)
 
         observer?.onIfStatement(exprResolver.simpleValueResolver, stmt, scope)
 
@@ -497,7 +475,7 @@ class JcInterpreter(
     }
 
     private fun visitReturnStmt(scope: JcStepScope, stmt: JcReturnInst) {
-        val exprResolver = exprResolverWithScope(scope)
+        val exprResolver = exprResolverWithScope(scope, stmt)
 
         observer?.onReturnStatement(exprResolver.simpleValueResolver, stmt, scope)
 
@@ -514,7 +492,7 @@ class JcInterpreter(
     }
 
     private fun visitGotoStmt(scope: JcStepScope, stmt: JcGotoInst) {
-        val exprResolver = exprResolverWithScope(scope)
+        val exprResolver = exprResolverWithScope(scope, stmt)
 
         observer?.onGotoStatement(exprResolver.simpleValueResolver, stmt, scope)
 
@@ -528,7 +506,7 @@ class JcInterpreter(
     }
 
     private fun visitSwitchStmt(scope: JcStepScope, stmt: JcSwitchInst) {
-        val exprResolver = exprResolverWithScope(scope)
+        val exprResolver = exprResolverWithScope(scope, stmt)
 
         observer?.onSwitchStatement(exprResolver.simpleValueResolver, stmt, scope)
 
@@ -564,7 +542,7 @@ class JcInterpreter(
     }
 
     private fun visitThrowStmt(scope: JcStepScope, stmt: JcThrowInst) {
-        val exprResolver = exprResolverWithScope(scope)
+        val exprResolver = exprResolverWithScope(scope, stmt)
 
         observer?.onThrowStatement(exprResolver.simpleValueResolver, stmt, scope)
 
@@ -579,7 +557,7 @@ class JcInterpreter(
     }
 
     private fun visitCallStmt(scope: JcStepScope, stmt: JcCallInst) {
-        val exprResolver = exprResolverWithScope(scope)
+        val exprResolver = exprResolverWithScope(scope, stmt)
         val callExpr = stmt.callExpr
         val methodResult = scope.calcOnState { methodResult }
 
@@ -597,13 +575,13 @@ class JcInterpreter(
         exprResolver.resolveJcExpr(callExpr) ?: return
 
         scope.doWithState {
-            val nextStmt = stmt.nextStmt
+            val nextStmt = stmt.nextStmt()
             newStmt(nextStmt)
         }
     }
 
     private fun visitMonitorEnterStmt(scope: JcStepScope, stmt: JcEnterMonitorInst) {
-        val exprResolver = exprResolverWithScope(scope)
+        val exprResolver = exprResolverWithScope(scope, stmt)
         exprResolver.resolveJcNotNullRefExpr(stmt.monitor, stmt.monitor.type) ?: return
 
         observer?.onEnterMonitorStatement(exprResolver.simpleValueResolver, stmt, scope)
@@ -611,12 +589,12 @@ class JcInterpreter(
         // Monitor enter makes sense only in multithreaded environment
 
         scope.doWithState {
-            newStmt(stmt.nextStmt)
+            newStmt(stmt.nextStmt())
         }
     }
 
     private fun visitMonitorExitStmt(scope: JcStepScope, stmt: JcExitMonitorInst) {
-        val exprResolver = exprResolverWithScope(scope)
+        val exprResolver = exprResolverWithScope(scope, stmt)
         exprResolver.resolveJcNotNullRefExpr(stmt.monitor, stmt.monitor.type) ?: return
 
         observer?.onExitMonitorStatement(exprResolver.simpleValueResolver, stmt, scope)
@@ -624,11 +602,11 @@ class JcInterpreter(
         // Monitor exit makes sense only in multithreaded environment
 
         scope.doWithState {
-            newStmt(stmt.nextStmt)
+            newStmt(stmt.nextStmt())
         }
     }
 
-    private fun exprResolverWithScope(scope: JcStepScope) =
+    private fun exprResolverWithScope(scope: JcStepScope, stmt: JcInst) =
         JcExprResolver(
             ctx,
             scope,
@@ -636,8 +614,44 @@ class JcInterpreter(
             ::mapLocalToIdxMapper,
             ::typeInstanceAllocator,
             ::stringConstantAllocator,
-            ::classInitializerAlwaysAnalysisRequiredForType
-        )
+            ::classInitializerAlwaysAnalysisRequiredForType,
+            getConcreteMap(stmt),
+            objectAllocatedRefs
+        ) { scope.arrayAllocator(it) }
+
+    private fun getConcreteMap(stmt: JcInst): Map<JcExpr, UTestValueDescriptor> {
+        val indexOfStmt = concolicTrace?.indexOf(stmt)
+        if (concreteValues == null || indexOfStmt == null || indexOfStmt == -1) {
+            return emptyMap()
+        }
+
+        fun flatExpressions(expr: JcExpr): List<JcExpr?> {
+            return when(expr) {
+                is JcBinaryExpr -> flatExpressions(expr.lhv) + flatExpressions(expr.rhv)
+
+                is JcInstanceOfExpr -> flatExpressions(expr.operand)
+                is JcNegExpr -> flatExpressions(expr.operand)
+                is JcCastExpr -> flatExpressions(expr.operand)
+                is JcLengthExpr -> flatExpressions(expr.array)
+
+                is JcNewArrayExpr -> expr.dimensions.flatMap { flatExpressions(it) }
+
+                is JcCallExpr -> ((if (expr is JcInstanceCallExpr && expr !is JcSpecialCallExpr)
+                        listOf(expr.instance)
+                    else listOf()) + expr.args).flatMap { flatExpressions(it) }
+
+                is JcConstant, is JcNewExpr -> listOf(null)
+                is JcLocal, is JcFieldRef -> listOf(expr)
+                is JcArrayAccess -> listOf(expr.array, expr.index, expr)
+
+                else -> error("Unexpected expression $expr")
+            }
+        }
+
+        val flattenExpressions =
+            (if (stmt is JcAssignInst) listOf(stmt.rhv) else stmt.operands).flatMap { flatExpressions(it) }
+        return concreteValues[indexOfStmt].mapKeys { flattenExpressions[it.key]!! }
+    }
 
     private val localVarToIdx = mutableMapOf<JcMethod, MutableMap<String, Int>>() // (method, localName) -> idx
 
@@ -655,7 +669,16 @@ class JcInterpreter(
             else -> error("Unexpected local: $local")
         }
 
-    private val JcInst.nextStmt get() = location.method.instList[location.index + 1]
+    private fun JcInst.nextStmt(): JcInst {
+        val instList = location.method.instList
+        val nexByFlowIndex = location.index + 1
+        if (concolicTrace == null) {
+            return instList[nexByFlowIndex]
+        }
+
+        return instList.drop(nexByFlowIndex).first { concolicTrace.contains(it) }
+    }
+
     private operator fun JcInstList<JcInst>.get(instRef: JcInstRef): JcInst = this[instRef.index]
 
     private val stringConstantAllocatedRefs = mutableMapOf<String, UConcreteHeapRef>()
@@ -665,6 +688,15 @@ class JcInterpreter(
         stringConstantAllocatedRefs.getOrPut(value) {
             // Allocate globally unique ref with a negative address
             ctx.allocateStaticRef()
+        }
+
+    private val objectAllocatedRefs = IdentityHashMap<UTestValueDescriptor, UConcreteHeapRef>()
+
+    private val arrayAllocatedRefs = IdentityHashMap<UTestArrayDescriptor, UConcreteHeapRef>()
+
+    private fun JcStepScope.arrayAllocator(value: UTestArrayDescriptor): UConcreteHeapRef =
+        arrayAllocatedRefs.getOrPut(value) {
+            calcOnState { memory.allocateArray(value.type, ctx.sizeSort, ctx.mkSizeExpr(value.length)) }
         }
 
     private val typeInstanceAllocatedRefs = mutableMapOf<JcTypeInfo, UConcreteHeapRef>()
@@ -708,7 +740,7 @@ class JcInterpreter(
     private val approximationResolver = JcMethodApproximationResolver(ctx, applicationGraph)
 
     private fun approximateMethod(scope: JcStepScope, methodCall: JcMethodCall): Boolean {
-        val exprResolver = exprResolverWithScope(scope)
+        val exprResolver = exprResolverWithScope(scope, methodCall.method.instList.first())
         return approximationResolver.approximate(scope, exprResolver, methodCall)
     }
 }

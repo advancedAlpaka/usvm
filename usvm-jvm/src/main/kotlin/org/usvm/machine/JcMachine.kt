@@ -6,13 +6,11 @@ import org.jacodb.api.JcMethod
 import org.jacodb.api.cfg.JcInst
 import org.jacodb.api.ext.humanReadableSignature
 import org.jacodb.api.ext.methods
-import org.usvm.CoverageZone
-import org.usvm.StateCollectionStrategy
-import org.usvm.UMachine
-import org.usvm.UMachineOptions
+import org.usvm.*
 import org.usvm.api.targets.JcTarget
 import org.usvm.forkblacklists.TargetsReachableForkBlackList
 import org.usvm.forkblacklists.UForkBlackList
+import org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor
 import org.usvm.machine.interpreter.JcInterpreter
 import org.usvm.machine.state.JcMethodResult
 import org.usvm.machine.state.JcState
@@ -45,6 +43,8 @@ class JcMachine(
     private val options: UMachineOptions,
     private val jcMachineOptions: JcMachineOptions = JcMachineOptions(),
     private val interpreterObserver: JcInterpreterObserver? = null,
+    concolicTrace: List<JcInst>? = null,
+    concreteValues: List<Map<Int, UTestValueDescriptor>>? = null
 ) : UMachine<JcState>() {
     private val applicationGraph = JcApplicationGraph(cp)
 
@@ -52,7 +52,7 @@ class JcMachine(
     private val components = JcComponents(typeSystem, options)
     private val ctx = JcContext(cp, components)
 
-    private val interpreter = JcInterpreter(ctx, applicationGraph, jcMachineOptions, interpreterObserver)
+    private val interpreter = JcInterpreter(ctx, applicationGraph, jcMachineOptions, interpreterObserver, concolicTrace = concolicTrace, concreteValues = concreteValues)
 
     private val cfgStatistics = CfgStatisticsImpl(applicationGraph)
 
