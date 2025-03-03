@@ -63,6 +63,7 @@ public class ConcolicCollector {
     }
 
     public static class ConcreteArgument {
+        // value by -1 index is used for selected branch in `if` and `switch` instructions
         public int index;
         public Object value;
 

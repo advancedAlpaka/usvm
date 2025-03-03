@@ -59,7 +59,7 @@ class JcRuntimeConcolicInstrumenter(
                 }
 
                 val operandsProcessor = OperandsProcessor(encodedInst)
-                val processOperandsInstructions = operandsProcessor.getProcessOperandsInstructions(listOf(rhv)) { flagsBuffer ->
+                val processOperandsInstructions = operandsProcessor.getProcessOperandsInstructions(rawJcInstruction, listOf(rhv)) { flagsBuffer ->
                     when (val lhv = rawJcInstruction.lhv) {
                         is JcRawLocalVar -> add(
                             JcRawAssignInst(
@@ -120,14 +120,14 @@ class JcRuntimeConcolicInstrumenter(
                 )
 
                 val processOperandsInstructions =
-                    OperandsProcessor(encodedInst).getProcessOperandsInstructions(rawJcInstruction.operands)
+                    OperandsProcessor(encodedInst).getProcessOperandsInstructions(rawJcInstruction)
 
                 instrumentedInstructionsList.insertBefore(rawJcInstruction, processOperandsInstructions)
             }
 
             is JcRawReturnInst -> {
                 val processOperandsInstructions =
-                    OperandsProcessor(encodedInst).getProcessOperandsInstructions(rawJcInstruction.operands)
+                    OperandsProcessor(encodedInst).getProcessOperandsInstructions(rawJcInstruction)
 
                 instrumentedInstructionsList.insertBefore(rawJcInstruction,  processOperandsInstructions)
                 instrumentedInstructionsList.insertBefore(rawJcInstruction, getOnExitFunctionInstructions())
@@ -139,7 +139,7 @@ class JcRuntimeConcolicInstrumenter(
             is JcRawEnterMonitorInst,
             is JcRawExitMonitorInst -> {
                 val processOperandsInstructions =
-                    OperandsProcessor(encodedInst).getProcessOperandsInstructions(rawJcInstruction.operands)
+                    OperandsProcessor(encodedInst).getProcessOperandsInstructions(rawJcInstruction)
                 instrumentedInstructionsList.insertBefore(rawJcInstruction,  processOperandsInstructions)
             }
 
@@ -289,7 +289,8 @@ class JcRuntimeConcolicInstrumenter(
         private lateinit var instructionInfoLocalVar: JcRawLocalVar
 
         fun getProcessOperandsInstructions(
-            operands: List<JcRawExpr>,
+            inst: JcRawInst,
+            operands: List<JcRawExpr> = inst.operands,
             flagsBufferCallback: (MutableList<JcRawInst>.(JcRawValue) -> Unit)? = null
         ): List<JcRawInst> = buildList {
             instructionInfoLocalVar = newLocalVar(instructionInfo, JcRawNewExpr(instructionInfo))
@@ -331,6 +332,53 @@ class JcRuntimeConcolicInstrumenter(
                     JcRawArrayAccess(symbolicInstructionsTrace, tracePointer, instructionInfo),
                     instructionInfoLocalVar
                 ))
+                if (inst is JcRawIfInst) {
+                    val castedExpr = newLocalVar(objectType)
+                    `if`(inst.condition) {
+                        add(JcRawAssignInst(owner, castedExpr,
+                            concolicInfoHelper.createBoxValueCall(JcRawBool(true))!!))
+                    } `else` {
+                        add(JcRawAssignInst(owner, castedExpr,
+                            concolicInfoHelper.createBoxValueCall(JcRawBool(false))!!))
+                    }
+                    add(
+                        JcRawCallInst(
+                            owner, JcRawVirtualCallExpr(
+                                instructionInfo,
+                                "addConcreteArgument",
+                                listOf(int, objectType),
+                                void,
+                                instructionInfoLocalVar,
+                                listOf(JcRawInt(-1), castedExpr)
+                            )
+                        )
+                    )
+                } else if (inst is JcRawSwitchInst) {
+                    val saveBranchSwitch = JcRawSwitchInst(owner, inst.key,
+                        inst.branches.mapValues { JcRawLabelRef(newLabelName()) }, JcRawLabelRef(newLabelName()))
+                    val castedExpr = newLocalVar(objectType)
+                    add(saveBranchSwitch)
+                    val exitLabel = newLabelName()
+                    for ((i, label) in (saveBranchSwitch.branches.values + saveBranchSwitch.default).withIndex()) {
+                        add(JcRawLabelInst(owner, label.name))
+                        add(JcRawAssignInst(owner, castedExpr,
+                            concolicInfoHelper.createBoxValueCall(JcRawInt(i))!!))
+                        add(JcRawGotoInst(owner, JcRawLabelRef(exitLabel)))
+                    }
+                    add(JcRawLabelInst(owner, exitLabel))
+                    add(
+                        JcRawCallInst(
+                            owner, JcRawVirtualCallExpr(
+                                instructionInfo,
+                                "addConcreteArgument",
+                                listOf(int, objectType),
+                                void,
+                                instructionInfoLocalVar,
+                                listOf(JcRawInt(-1), castedExpr)
+                            )
+                        )
+                    )
+                }
             }
 
             if (flagsBufferCallback != null) {
