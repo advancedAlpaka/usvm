@@ -9,6 +9,7 @@ import com.jetbrains.rd.util.threading.SynchronousScheduler
 import kotlinx.coroutines.delay
 import org.jacodb.api.JcClassOrInterface
 import org.jacodb.api.JcClasspath
+import org.jacodb.api.JcField
 import org.jacodb.api.cfg.JcInst
 import org.jacodb.api.ext.methods
 import org.usvm.instrumentation.generated.models.*
@@ -20,6 +21,7 @@ import org.usvm.instrumentation.serializer.UTestValueDescriptorSerializer.Compan
 import org.usvm.instrumentation.testcase.UTest
 import org.usvm.instrumentation.testcase.api.*
 import org.usvm.instrumentation.testcase.descriptor.UTestExceptionDescriptor
+import org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlin.math.pow
@@ -178,7 +180,9 @@ class RdProcessRunner(
     }
 
     private fun deserializeExecutionState(state: ExecutionStateSerialized): UTestExecutionState {
-        val statics = state.statics?.associate {
+        val statics = state.statics
+            ?.filter { !it.fieldName.startsWith("org.usvm.instrumentation") }
+            ?.associate {
             val jcField = jcClasspath.findFieldByFullNameOrNull(it.fieldName) ?: error("deserialization failed")
             val jcFieldDescriptor = it.fieldDescriptor
             jcField to jcFieldDescriptor

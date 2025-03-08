@@ -25,6 +25,7 @@ class JcState(
     forkPoints: PathNode<PathNode<JcInst>> = PathNode.root(),
     var methodResult: JcMethodResult = JcMethodResult.NoCall,
     targets: UTargetsSet<JcTarget, JcInst> = UTargetsSet.empty(),
+    var deviatedFromConcolicTrace: Boolean,
 ) : UState<JcType, JcMethod, JcInst, JcContext, JcTarget, JcState>(
     ctx,
     callStack,
@@ -48,6 +49,7 @@ class JcState(
             forkPoints,
             methodResult,
             targets.clone(),
+            deviatedFromConcolicTrace,
         )
     }
 
@@ -88,7 +90,8 @@ class JcState(
             mergedPathNode,
             mergedForkPoints,
             methodResult,
-            mergedTargets
+            mergedTargets,
+            deviatedFromConcolicTrace
         )
     }
 

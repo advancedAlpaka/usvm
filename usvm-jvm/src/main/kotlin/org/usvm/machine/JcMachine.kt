@@ -8,6 +8,8 @@ import org.jacodb.api.ext.humanReadableSignature
 import org.jacodb.api.ext.methods
 import org.usvm.*
 import org.usvm.api.targets.JcTarget
+import org.usvm.concolic.ConcolicPathSelector
+import org.usvm.concolic.ConcolicStatesCollector
 import org.usvm.forkblacklists.TargetsReachableForkBlackList
 import org.usvm.forkblacklists.UForkBlackList
 import org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor
@@ -43,8 +45,8 @@ class JcMachine(
     private val options: UMachineOptions,
     private val jcMachineOptions: JcMachineOptions = JcMachineOptions(),
     private val interpreterObserver: JcInterpreterObserver? = null,
-    concolicTrace: List<JcInst>? = null,
-    concreteValues: List<Map<Int, UTestValueDescriptor>>? = null
+    private val concolicTrace: MutableList<JcInst>? = null,
+    concreteValues: MutableList<Map<Int, UTestValueDescriptor>>? = null
 ) : UMachine<JcState>() {
     private val applicationGraph = JcApplicationGraph(cp)
 
@@ -96,18 +98,23 @@ class JcMachine(
         val timeStatistics = TimeStatistics<JcMethod, JcState>()
         val loopTracker = JcLoopTracker()
 
-        val pathSelector = createPathSelector(
-            initialStates,
-            options,
-            applicationGraph,
-            timeStatistics,
-            { coverageStatistics },
-            { transparentCfgStatistics },
-            { callGraphStatistics },
-            { loopTracker }
-        )
+        val pathSelector = if (concolicTrace != null) ConcolicPathSelector(concolicTrace) else
+            createPathSelector(
+                initialStates,
+                options,
+                applicationGraph,
+                timeStatistics,
+                { coverageStatistics },
+                { transparentCfgStatistics },
+                { callGraphStatistics },
+                { loopTracker }
+            )
 
-        val statesCollector =
+        if (concolicTrace != null) {
+            pathSelector.add(initialStates.values.toList())
+        }
+
+        val statesCollector = if (concolicTrace != null) ConcolicStatesCollector(concolicTrace) else
             when (options.stateCollectionStrategy) {
                 StateCollectionStrategy.COVERED_NEW -> CoveredNewStatesCollector<JcState>(coverageStatistics) {
                     it.methodResult is JcMethodResult.JcException
@@ -164,7 +171,7 @@ class JcMachine(
                     callGraphStatistics = callGraphStatistics
                 )
             }
-            interpreter.forkBlackList =
+            interpreter.forkBlackList = if (concolicTrace != null) UForkBlackList.createDefault() else
                 TargetsReachableForkBlackList(distanceCalculator, shouldBlackList = { isInfinite })
         } else {
             interpreter.forkBlackList = UForkBlackList.createDefault()

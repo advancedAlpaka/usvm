@@ -22,6 +22,7 @@ import org.usvm.collection.array.UArrayIndexLValue
 import org.usvm.collection.field.UFieldLValue
 import org.usvm.forkblacklists.UForkBlackList
 import org.usvm.instrumentation.testcase.descriptor.UTestArrayDescriptor
+import org.usvm.instrumentation.testcase.descriptor.UTestConstantDescriptor
 import org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor
 import org.usvm.machine.JcApplicationGraph
 import org.usvm.machine.JcConcreteMethodCallInst
@@ -69,8 +70,8 @@ class JcInterpreter(
     private val options: JcMachineOptions,
     private val observer: JcInterpreterObserver? = null,
     var forkBlackList: UForkBlackList<JcState, JcInst> = UForkBlackList.createDefault(),
-    private val concolicTrace: List<JcInst>? = null,
-    private val concreteValues: List<Map<Int, UTestValueDescriptor>>? = null
+    private val concolicTrace: MutableList<JcInst>? = null,
+    private val concreteValues: MutableList<Map<Int, UTestValueDescriptor>>? = null
 ) : UInterpreter<JcState>() {
 
     companion object {
@@ -78,7 +79,7 @@ class JcInterpreter(
     }
 
     fun getInitialState(method: JcMethod, targets: List<JcTarget> = emptyList()): JcState {
-        val state = JcState(ctx, method, targets = UTargetsSet.from(targets))
+        val state = JcState(ctx, method, targets = UTargetsSet.from(targets), deviatedFromConcolicTrace = false)
         val typedMethod = with(applicationGraph) { method.typed }
 
         val entrypointArguments = mutableListOf<Pair<JcRefType, UHeapRef>>()
@@ -132,6 +133,10 @@ class JcInterpreter(
         logger.debug("Step: {}", stmt)
 
         val scope = StepScope(state, forkBlackList)
+
+        if (state.deviatedFromConcolicTrace) {
+            return scope.stepResult()
+        }
 
         // handle exception firstly
         val result = state.methodResult
@@ -240,8 +245,9 @@ class JcInterpreter(
                 val entryPoint = applicationGraph.entryPoints(method).singleOrNull()
                     ?: error("Entrypoint method $method has no entry points")
 
+                val methodInstList = method.instList
                 scope.doWithState {
-                    newStmt(entryPoint)
+                    newStmt(methodInstList.getStmt(methodInstList.indexOf(entryPoint)))
                 }
             }
 
@@ -251,12 +257,15 @@ class JcInterpreter(
                     return
                 }
 
-                val entryPoint = applicationGraph.entryPoints(method).singleOrNull()
+                var entryPoint = applicationGraph.entryPoints(method).singleOrNull()
 
                 if (method.isNative || entryPoint == null) {
                     mockMethod(scope, stmt, applicationGraph)
                     return
                 }
+
+                val methodInstList = method.instList
+                entryPoint = methodInstList.getStmt(methodInstList.indexOf(entryPoint))
 
                 handleInnerClassMethodCall(
                     scope,
@@ -462,7 +471,15 @@ class JcInterpreter(
             ?: return
 
         val instList = stmt.location.method.instList
-        val (posStmt, negStmt) = instList[stmt.trueBranch.index] to instList[stmt.falseBranch.index]
+        var (posStmt, negStmt) = instList[stmt.trueBranch.index] to instList[stmt.falseBranch.index]
+        if (concreteValues != null) {
+            val selectedBranch = (concreteValues.first()[-1] as UTestConstantDescriptor.Boolean).value
+            if (selectedBranch) {
+                posStmt = instList.getStmt(stmt.trueBranch.index)
+            } else {
+                negStmt = instList.getStmt(stmt.falseBranch.index)
+            }
+        }
 
         scope.forkWithBlackList(
             boolExpr,
@@ -536,7 +553,19 @@ class JcInterpreter(
                     block = { newStmt(defaultStmt) }
                 )
 
-            scope.forkMultiWithBlackList(cases + defaultCase)
+            val branches = (cases + defaultCase).toMutableList()
+            if (concreteValues != null) {
+                val selectedBranchIndex = (concreteValues.first()[-1] as UTestConstantDescriptor.Int).value
+                val selectedBranch = branches[selectedBranchIndex]
+                val nextStmt = instList.getStmt(instList.indexOf(selectedBranch.stmt))
+                branches[selectedBranchIndex] = ForkCase(
+                    selectedBranch.condition,
+                    nextStmt,
+                    block = { newStmt(nextStmt) }
+                )
+            }
+
+            scope.forkMultiWithBlackList(branches)
             scope.onStateDeath { logger.info { "State death on fork with blacklist" } }
         }
     }
@@ -650,7 +679,7 @@ class JcInterpreter(
 
         val flattenExpressions =
             (if (stmt is JcAssignInst) listOf(stmt.rhv) else stmt.operands).flatMap { flatExpressions(it) }
-        return concreteValues[indexOfStmt].mapKeys { flattenExpressions[it.key]!! }
+        return concreteValues[indexOfStmt].filter { it.key != -1 }.mapKeys { flattenExpressions[it.key]!! }
     }
 
     private val localVarToIdx = mutableMapOf<JcMethod, MutableMap<String, Int>>() // (method, localName) -> idx
@@ -672,11 +701,25 @@ class JcInterpreter(
     private fun JcInst.nextStmt(): JcInst {
         val instList = location.method.instList
         val nexByFlowIndex = location.index + 1
+
+        return instList.getStmt(nexByFlowIndex)
+    }
+
+    private var firstInstruction = true
+    private fun JcInstList<JcInst>.getStmt(from: Int): JcInst {
         if (concolicTrace == null) {
-            return instList[nexByFlowIndex]
+            return get(from)
         }
 
-        return instList.drop(nexByFlowIndex).first { concolicTrace.contains(it) }
+        if (firstInstruction) {
+            firstInstruction = false
+        } else {
+            concreteValues?.removeFirst()
+            concolicTrace.removeFirst()
+        }
+
+        val nextByConcolicTrace = concolicTrace.firstOrNull() ?: return get(from)
+        return drop(from).first { it == nextByConcolicTrace }
     }
 
     private operator fun JcInstList<JcInst>.get(instRef: JcInstRef): JcInst = this[instRef.index]
