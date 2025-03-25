@@ -437,6 +437,7 @@ class JcRuntimeConcolicInstrumenter(
                             add(JcRawAssignInst(owner, flags, JcRawByte(0)))
                         }
                     } else {
+                        processExpression(instance)
                         getObjectInhabitantFlags(instance, expr.fieldId, flags)
                     }
 
@@ -506,7 +507,7 @@ class JcRuntimeConcolicInstrumenter(
                     )
                 ))
             } `else` {
-                add(JcRawAssignInst(owner, flags, JcRawByte(0)))
+                add(JcRawAssignInst(owner, flags, expressionFlagsBuffer!!))
             }
         }
 

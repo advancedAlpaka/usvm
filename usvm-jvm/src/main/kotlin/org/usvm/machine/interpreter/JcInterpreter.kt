@@ -670,7 +670,8 @@ class JcInterpreter(
                     else listOf()) + expr.args).flatMap { flatExpressions(it) }
 
                 is JcConstant, is JcNewExpr -> listOf(null)
-                is JcLocal, is JcFieldRef -> listOf(expr)
+                is JcLocal -> listOf(expr)
+                is JcFieldRef -> listOf(expr.instance, expr)
                 is JcArrayAccess -> listOf(expr.array, expr.index, expr)
 
                 else -> error("Unexpected expression $expr")
