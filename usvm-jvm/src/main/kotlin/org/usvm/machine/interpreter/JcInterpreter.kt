@@ -706,21 +706,29 @@ class JcInterpreter(
         return instList.getStmt(nexByFlowIndex)
     }
 
-    private var firstInstruction = true
+    private var firstStmt = true
     private fun JcInstList<JcInst>.getStmt(from: Int): JcInst {
         if (concolicTrace == null) {
             return get(from)
         }
 
-        if (firstInstruction) {
-            firstInstruction = false
+        if (firstStmt) {
+            firstStmt = false
+            val nextByConcolicTrace = concolicTrace.firstOrNull() ?: return get(from)
+            return drop(from).first { it == nextByConcolicTrace }
         } else {
-            concreteValues?.removeFirst()
-            concolicTrace.removeFirst()
-        }
+            if (concolicTrace.size <= 1) {
+                concreteValues?.removeFirstOrNull()
+                concolicTrace.removeFirstOrNull()
+                return get(from)
+            }
 
-        val nextByConcolicTrace = concolicTrace.firstOrNull() ?: return get(from)
-        return drop(from).first { it == nextByConcolicTrace }
+            val nextByConcolicTrace = concolicTrace[1]
+            drop(from).firstOrNull { it == nextByConcolicTrace }?.let { return it.also {
+                concreteValues?.removeFirst()
+                concolicTrace.removeFirst()
+            } } ?: return JcReturnInst(nextByConcolicTrace.location, null)
+        }
     }
 
     private operator fun JcInstList<JcInst>.get(instRef: JcInstRef): JcInst = this[instRef.index]
