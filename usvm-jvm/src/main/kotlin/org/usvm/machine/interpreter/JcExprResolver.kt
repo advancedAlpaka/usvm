@@ -4,16 +4,7 @@ import io.ksmt.expr.KExpr
 import io.ksmt.utils.asExpr
 import io.ksmt.utils.cast
 import io.ksmt.utils.uncheckedCast
-import org.jacodb.api.JcArrayType
-import org.jacodb.api.JcClassOrInterface
-import org.jacodb.api.JcClassType
-import org.jacodb.api.JcMethod
-import org.jacodb.api.JcPrimitiveType
-import org.jacodb.api.JcRefType
-import org.jacodb.api.JcType
-import org.jacodb.api.JcTypeVariable
-import org.jacodb.api.JcTypedField
-import org.jacodb.api.JcTypedMethod
+import org.jacodb.api.*
 import org.jacodb.api.cfg.JcAddExpr
 import org.jacodb.api.cfg.JcAndExpr
 import org.jacodb.api.cfg.JcArgument
@@ -70,20 +61,7 @@ import org.jacodb.api.cfg.JcUshrExpr
 import org.jacodb.api.cfg.JcValue
 import org.jacodb.api.cfg.JcVirtualCallExpr
 import org.jacodb.api.cfg.JcXorExpr
-import org.jacodb.api.ext.boolean
-import org.jacodb.api.ext.byte
-import org.jacodb.api.ext.char
-import org.jacodb.api.ext.double
-import org.jacodb.api.ext.enumValues
-import org.jacodb.api.ext.float
-import org.jacodb.api.ext.ifArrayGetElementType
-import org.jacodb.api.ext.int
-import org.jacodb.api.ext.isEnum
-import org.jacodb.api.ext.long
-import org.jacodb.api.ext.objectType
-import org.jacodb.api.ext.short
-import org.jacodb.api.ext.toType
-import org.jacodb.api.ext.void
+import org.jacodb.api.ext.*
 import org.usvm.UBvSort
 import org.usvm.UConcreteHeapRef
 import org.usvm.UExpr
@@ -1313,14 +1291,35 @@ class JcSimpleValueResolver(
             array
         }
 
-        is UTestEnumValueDescriptor -> TODO("support enums")
-        is UTestExceptionDescriptor -> TODO("support exceptions descriptors")
+        is UTestExceptionDescriptor -> scope.calcOnState {
+            val exceptionDescriptor = this@toUExpr
+            val ref = objectsCache.getOrPut(exceptionDescriptor) { ctx.allocateConcreteRef() }
 
-        is UTestObjectDescriptor -> scope.calcOnState {
+            val throwableClassType = ctx.cp.findClass("java.lang.Throwable").toType()
+            val messageField = throwableClassType.declaredFields.first { it.name == "detailMessage" }
+
+            val messageFieldLValue = UFieldLValue(ctx.addressSort, ref, messageField)
+            memory.types.allocate(ref.address, messageField.fieldType)
+            val messageFieldValue = visitJcStringConstant(JcStringConstant(exceptionDescriptor.message, ctx.stringType))
+            memory.write(messageFieldLValue, messageFieldValue)
+
+            val stackTraceField = throwableClassType.declaredFields.first { it.name == "stackTrace" }
+            val stackTraceFieldLValue = UFieldLValue(ctx.addressSort, ref, stackTraceField)
+            memory.types.allocate(ref.address, stackTraceField.fieldType)
+            val stackTrace = UTestArrayDescriptor(ctx.cp.findType("java.lang.StackTraceElement"),
+                exceptionDescriptor.stackTrace.size, exceptionDescriptor.stackTrace, -1)
+            memory.write(stackTraceFieldLValue, stackTrace.toUExpr())
+
+            ref
+        }
+
+        is UTestObjectDescriptor, is UTestEnumValueDescriptor -> scope.calcOnState {
             val objectDescriptor = this@toUExpr
             val ref =  objectsCache.getOrPut(objectDescriptor) { ctx.allocateConcreteRef() }
 
-            for ((field, fieldDescriptor) in objectDescriptor.fields) {
+            val fields = if (objectDescriptor is UTestObjectDescriptor) objectDescriptor.fields
+                        else (objectDescriptor as UTestEnumValueDescriptor).fields
+            for ((field, fieldDescriptor) in fields) {
                 val fieldLValue = UFieldLValue(ctx.addressSort, ref, field)
 
                 memory.types.allocate(ref.address, fieldDescriptor.type)
