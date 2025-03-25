@@ -11,7 +11,6 @@ import org.jacodb.api.ext.double
 import org.jacodb.api.ext.float
 import org.jacodb.api.ext.int
 import org.jacodb.api.ext.long
-import org.jacodb.api.ext.objectType
 import org.jacodb.api.ext.short
 import org.jacodb.api.ext.toType
 import org.usvm.api.decoder.DecoderApi
