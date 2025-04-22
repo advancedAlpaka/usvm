@@ -1,14 +1,15 @@
 package org.usvm.concolic
 
 import kotlinx.coroutines.runBlocking
-import org.jacodb.api.JcClasspath
-import org.jacodb.api.JcMethod
-import org.jacodb.api.cfg.JcInst
-import org.jacodb.api.ext.*
+import org.jacodb.api.jvm.JcClasspath
+import org.jacodb.api.jvm.JcMethod
+import org.jacodb.api.jvm.cfg.JcInst
+import org.jacodb.api.jvm.ext.*
 import org.jacodb.impl.features.InMemoryHierarchy
 import org.jacodb.impl.features.classpaths.JcUnknownClass
 import org.jacodb.impl.features.classpaths.JcUnknownField
 import org.jacodb.impl.jacodb
+import org.objectweb.asm.Opcodes
 import org.usvm.PathSelectionStrategy
 import org.usvm.UMachineOptions
 import org.usvm.api.targets.JcTarget
@@ -18,7 +19,10 @@ import org.usvm.instrumentation.instrumentation.JcRuntimeConcolicInstrumenterFac
 import org.usvm.instrumentation.testcase.UTest
 import org.usvm.instrumentation.testcase.api.*
 import org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor
-import org.usvm.instrumentation.util.*
+import org.usvm.instrumentation.util.InstrumentationModuleConstants
+import org.usvm.instrumentation.util.getTypename
+import org.usvm.instrumentation.util.toJcClass
+import org.usvm.instrumentation.util.toJcType
 import org.usvm.machine.JcApplicationGraph
 import org.usvm.machine.JcMachine
 import org.usvm.machine.state.JcState
@@ -128,6 +132,7 @@ class JvmConcolicRunner(jarPaths: List<String>, private val method: JcMethod) : 
                     JcUnknownField(
                         JcUnknownClass(classpath, "org.usvm.instrumentation.collector.trace.ConcolicCollector"),
                         "argumentsFlagsStack",
+                        Opcodes.ACC_PUBLIC,
                         classpath.arrayTypeOf(classpath.arrayTypeOf(classpath.byte)).getTypename()
                     )
                 ),
@@ -147,6 +152,7 @@ class JvmConcolicRunner(jarPaths: List<String>, private val method: JcMethod) : 
                             JcUnknownField(
                                 JcUnknownClass(classpath, "org.usvm.instrumentation.collector.trace.ConcolicCollector"),
                                 "argumentsFlagsStack",
+                                Opcodes.ACC_PUBLIC,
                                 classpath.arrayTypeOf(classpath.arrayTypeOf(classpath.byte)).getTypename()
                             )
                         ),

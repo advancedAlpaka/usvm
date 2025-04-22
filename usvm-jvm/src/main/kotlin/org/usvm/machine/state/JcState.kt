@@ -1,12 +1,13 @@
 package org.usvm.machine.state
 
-import org.jacodb.api.JcMethod
-import org.jacodb.api.JcType
-import org.jacodb.api.cfg.JcInst
+import org.jacodb.api.jvm.JcMethod
+import org.jacodb.api.jvm.JcType
+import org.jacodb.api.jvm.cfg.JcInst
 import org.usvm.PathNode
 import org.usvm.UCallStack
 import org.usvm.UState
 import org.usvm.api.targets.JcTarget
+import org.usvm.collections.immutable.internal.MutabilityOwnership
 import org.usvm.constraints.UPathConstraints
 import org.usvm.machine.JcContext
 import org.usvm.memory.UMemory
@@ -16,10 +17,11 @@ import org.usvm.targets.UTargetsSet
 
 class JcState(
     ctx: JcContext,
+    ownership: MutabilityOwnership,
     override val entrypoint: JcMethod,
     callStack: UCallStack<JcMethod, JcInst> = UCallStack(),
-    pathConstraints: UPathConstraints<JcType> = UPathConstraints(ctx),
-    memory: UMemory<JcType, JcMethod> = UMemory(ctx, pathConstraints.typeConstraints),
+    pathConstraints: UPathConstraints<JcType> = UPathConstraints(ctx, ownership),
+    memory: UMemory<JcType, JcMethod> = UMemory(ctx, ownership, pathConstraints.typeConstraints),
     models: List<UModelBase<JcType>> = listOf(),
     pathNode: PathNode<JcInst> = PathNode.root(),
     forkPoints: PathNode<PathNode<JcInst>> = PathNode.root(),
@@ -28,6 +30,7 @@ class JcState(
     var deviatedFromConcolicTrace: Boolean,
 ) : UState<JcType, JcMethod, JcInst, JcContext, JcTarget, JcState>(
     ctx,
+    ownership,
     callStack,
     pathConstraints,
     memory,
@@ -37,13 +40,20 @@ class JcState(
     targets
 ) {
     override fun clone(newConstraints: UPathConstraints<JcType>?): JcState {
-        val clonedConstraints = newConstraints ?: pathConstraints.clone()
+        val newThisOwnership = MutabilityOwnership()
+        val cloneOwnership = MutabilityOwnership()
+        val clonedConstraints = newConstraints?.also {
+            this.pathConstraints.changeOwnership(newThisOwnership)
+            it.changeOwnership(cloneOwnership)
+        } ?: pathConstraints.clone(newThisOwnership, cloneOwnership)
+        this.ownership = newThisOwnership
         return JcState(
             ctx,
+            cloneOwnership,
             entrypoint,
             callStack.clone(),
             clonedConstraints,
-            memory.clone(clonedConstraints.typeConstraints),
+            memory.clone(clonedConstraints.typeConstraints, newThisOwnership, cloneOwnership),
             models,
             pathNode,
             forkPoints,
@@ -59,6 +69,10 @@ class JcState(
      * @return the merged state. TODO: Now it may reuse some of the internal components of the former states.
      */
     override fun mergeWith(other: JcState, by: Unit): JcState? {
+        val newThisOwnership = MutabilityOwnership()
+        val newOtherOwnership = MutabilityOwnership()
+        val mergedOwnership = MutabilityOwnership()
+
         require(entrypoint == other.entrypoint) { "Cannot merge states with different entrypoints" }
         // TODO: copy-paste
 
@@ -67,10 +81,13 @@ class JcState(
 
         val mergeGuard = MutableMergeGuard(ctx)
         val mergedCallStack = callStack.mergeWith(other.callStack, Unit) ?: return null
-        val mergedPathConstraints = pathConstraints.mergeWith(other.pathConstraints, mergeGuard)
-            ?: return null
-        val mergedMemory = memory.clone(mergedPathConstraints.typeConstraints).mergeWith(other.memory, mergeGuard)
-            ?: return null
+        val mergedPathConstraints = pathConstraints.mergeWith(
+            other.pathConstraints, mergeGuard, newThisOwnership, newOtherOwnership, mergedOwnership
+        ) ?: return null
+        val mergedMemory =
+            memory.clone(mergedPathConstraints.typeConstraints, newThisOwnership, newOtherOwnership)
+                .mergeWith(other.memory, mergeGuard, newThisOwnership, newOtherOwnership, mergedOwnership)
+                ?: return null
         val mergedModels = models + other.models
         val methodResult = if (other.methodResult == JcMethodResult.NoCall && methodResult == JcMethodResult.NoCall) {
             JcMethodResult.NoCall
@@ -80,8 +97,11 @@ class JcState(
         val mergedTargets = targets.takeIf { it == other.targets } ?: return null
         mergedPathConstraints += ctx.mkOr(mergeGuard.thisConstraint, mergeGuard.otherConstraint)
 
+        this.ownership = newThisOwnership
+        other.ownership = newOtherOwnership
         return JcState(
             ctx,
+            mergedOwnership,
             entrypoint,
             mergedCallStack,
             mergedPathConstraints,

@@ -1,9 +1,9 @@
 package org.usvm.api.util
 
 import kotlinx.coroutines.runBlocking
-import org.jacodb.api.JcClassOrInterface
-import org.jacodb.api.JcClasspath
-import org.jacodb.api.ext.annotation
+import org.jacodb.api.jvm.JcClassOrInterface
+import org.jacodb.api.jvm.JcClasspath
+import org.jacodb.api.jvm.ext.annotation
 import org.jacodb.impl.features.hierarchyExt
 import org.usvm.api.decoder.DecoderFor
 import org.usvm.api.decoder.ObjectDecoder
@@ -19,7 +19,7 @@ class JcTestDecoders(private val cp: JcClasspath) {
 
         return runBlocking {
             cp.hierarchyExt()
-                .findSubClasses(objectDecoder, allHierarchy = true, includeOwn = false)
+                .findSubClasses(objectDecoder, entireHierarchy = true, includeOwn = false)
                 .mapNotNull { loadDecoder(it) }
                 .toMap()
         }

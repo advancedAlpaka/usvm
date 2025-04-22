@@ -15,7 +15,7 @@ fun <Method, T : USort> UState<*, Method, *, *, *, *>.makeSymbolicPrimitive(
     sort: T
 ): UExpr<T> {
     check(sort != sort.uctx.addressSort) { "$sort is not primitive" }
-    return memory.mocker.createMockSymbol(trackedLiteral = null, sort)
+    return memory.mocker.createMockSymbol(trackedLiteral = null, sort, ownership)
 }
 
 fun <Type, Method, State> StepScope<State, Type, *, *>.makeSymbolicRef(
@@ -28,8 +28,13 @@ fun <Type, Method, State> StepScope<State, Type, *, *>.makeSymbolicRefWithSameTy
 ): UHeapRef? where State : UState<Type, Method, *, *, *, State> =
     mockSymbolicRef { objectTypeEquals(it, representative) }
 
+fun <Type, Method, State> StepScope<State, Type, *, *>.makeNullableSymbolicRefWithSameType(
+    representative: UHeapRef
+): UHeapRef? where State : UState<Type, Method, *, *, *, State> =
+    mockSymbolicRef { ctx.mkOr(objectTypeEquals(it, representative), ctx.mkEq(it, ctx.nullRef)) }
+
 fun <Method> UState<*, Method, *, *, *, *>.makeSymbolicRefUntyped(): UHeapRef =
-    memory.mocker.createMockSymbol(trackedLiteral = null, ctx.addressSort)
+    memory.mocker.createMockSymbol(trackedLiteral = null, ctx.addressSort, ownership)
 
 private inline fun <Type, Method, State> StepScope<State, Type, *, *>.mockSymbolicRef(
     crossinline mkTypeConstraint: State.(UHeapRef) -> UBoolExpr

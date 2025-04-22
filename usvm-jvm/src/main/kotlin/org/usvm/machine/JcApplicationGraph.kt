@@ -1,13 +1,14 @@
 package org.usvm.machine
 
-import org.jacodb.analysis.graph.JcApplicationGraphImpl
-import org.jacodb.api.JcClasspath
-import org.jacodb.api.JcMethod
-import org.jacodb.api.JcTypedMethod
-import org.jacodb.api.cfg.JcInst
-import org.jacodb.api.ext.toType
-import org.jacodb.impl.features.HierarchyExtensionImpl
+import kotlinx.coroutines.runBlocking
+import org.jacodb.api.jvm.JcClasspath
+import org.jacodb.api.jvm.JcMethod
+import org.jacodb.api.jvm.JcTypedMethod
+import org.jacodb.api.jvm.cfg.JcInst
+import org.jacodb.api.jvm.ext.toType
 import org.jacodb.impl.features.SyncUsagesExtension
+import org.jacodb.impl.features.hierarchyExt
+import org.usvm.dataflow.jvm.graph.JcApplicationGraphImpl
 import org.usvm.statistics.ApplicationGraph
 import org.usvm.util.originalInst
 import java.util.concurrent.ConcurrentHashMap
@@ -18,7 +19,8 @@ import java.util.concurrent.ConcurrentHashMap
 class JcApplicationGraph(
     cp: JcClasspath,
 ) : ApplicationGraph<JcMethod, JcInst> {
-    private val jcApplicationGraph = JcApplicationGraphImpl(cp, SyncUsagesExtension(HierarchyExtensionImpl(cp), cp))
+    private val jcApplicationGraph =
+        JcApplicationGraphImpl(cp, SyncUsagesExtension(runBlocking { cp.hierarchyExt() }, cp))
 
     override fun predecessors(node: JcInst): Sequence<JcInst> {
         return jcApplicationGraph.predecessors(node.originalInst())
@@ -36,7 +38,7 @@ class JcApplicationGraph(
         jcApplicationGraph.callers(method)
 
     override fun entryPoints(method: JcMethod): Sequence<JcInst> =
-        jcApplicationGraph.entryPoint(method)
+        jcApplicationGraph.entryPoints(method)
 
     override fun exitPoints(method: JcMethod): Sequence<JcInst> =
         jcApplicationGraph.exitPoints(method)

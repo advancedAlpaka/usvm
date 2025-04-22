@@ -1,12 +1,14 @@
 package org.usvm.samples
 
 import kotlinx.coroutines.runBlocking
-import org.jacodb.api.JcClasspath
-import org.jacodb.api.JcDatabase
+import org.jacodb.api.jvm.JcClasspath
+import org.jacodb.api.jvm.JcDatabase
+import org.jacodb.api.jvm.JcSettings
 import org.jacodb.approximation.Approximations
-import org.jacodb.impl.JcSettings
 import org.jacodb.impl.features.InMemoryHierarchy
 import org.jacodb.impl.jacodb
+import org.usvm.machine.interpreter.transformers.JcMultiDimArrayAllocationTransformer
+import org.usvm.machine.interpreter.transformers.JcStringConcatTransformer
 import org.usvm.util.classpathWithApproximations
 import java.io.File
 
@@ -30,10 +32,15 @@ class JacoDBContainer(
                 loadByteCode(classpath)
             }
 
+            val features = listOf(
+                JcMultiDimArrayAllocationTransformer,
+                JcStringConcatTransformer,
+            )
+
             val cp = if (samplesWithApproximationsKey == key) {
-                db.classpathWithApproximations(classpath)
+                db.classpathWithApproximations(classpath, features)
             } else {
-                db.classpath(classpath)
+                db.classpath(classpath, features)
             }
             db to cp
         }

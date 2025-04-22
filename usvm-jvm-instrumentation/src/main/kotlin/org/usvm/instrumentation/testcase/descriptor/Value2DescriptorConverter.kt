@@ -1,8 +1,8 @@
 package org.usvm.instrumentation.testcase.descriptor
 
-import org.jacodb.api.JcField
-import org.jacodb.api.JcType
-import org.jacodb.api.ext.*
+import org.jacodb.api.jvm.JcField
+import org.jacodb.api.jvm.JcType
+import org.jacodb.api.jvm.ext.*
 import org.usvm.instrumentation.classloader.WorkerClassLoader
 import org.usvm.instrumentation.mock.MockHelper
 import org.usvm.instrumentation.testcase.executor.UTestExpressionExecutor
@@ -258,11 +258,11 @@ open class Value2DescriptorConverter(
         )
     }
 
-    private fun `enum`(value: Any, depth: Int): UTestEnumValueDescriptor {
+    private fun `enum`(value: Enum<*>, depth: Int): UTestEnumValueDescriptor {
         val enumValueJcClass = jcClasspath.findClass(value::class.java.name)
         val jcClass = if (!enumValueJcClass.isEnum) enumValueJcClass.superClass!! else enumValueJcClass
         val fields = mutableMapOf<JcField, UTestValueDescriptor>()
-        val enumValueName = value.toString()
+        val enumValueName = value.name
         val jcType = jcClass.toType()
         val uTestEnumValueDescriptor =
             UTestEnumValueDescriptor(jcType, enumValueName, fields, System.identityHashCode(value))

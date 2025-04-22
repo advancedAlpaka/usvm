@@ -1,14 +1,13 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import com.jetbrains.rd.generator.gradle.RdGenExtension
 import com.jetbrains.rd.generator.gradle.RdGenTask
-import org.gradle.api.tasks.testing.Test
-import org.gradle.kotlin.dsl.sourceSets
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     id("usvm.kotlin-conventions")
-    id("com.jetbrains.rdgen") version Versions.rd
-    application
     java
+    id(Plugins.RdGen)
+    id(Plugins.Shadow)
 }
 
 val rdgenModelsCompileClasspath by configurations.creating {
@@ -41,13 +40,31 @@ kotlin {
 }
 
 dependencies {
-    implementation("org.jacodb:jacodb-core:${Versions.jcdb}")
-    implementation("org.jacodb:jacodb-analysis:${Versions.jcdb}")
+    implementation(Libs.jacodb_api_jvm) {
+        // Unused dependencies
+        exclude("javax.xml.bind", "jaxb-api")
+        exclude("org.reactivestreams", "reactive-streams")
+    }
 
-    implementation("com.jetbrains.rd:rd-framework:${Versions.rd}")
-    implementation("org.ini4j:ini4j:${Versions.ini4j}")
-    implementation("com.jetbrains.rd:rd-core:${Versions.rd}")
+    implementation(Libs.jacodb_core) {
+        // Added above with exclusions
+        exclude(Libs.jacodb_api_jvm)
+
+        // Sqlite related dependencies. Unused because we use RAM persistence
+        exclude("com.zaxxer", "HikariCP")
+        exclude("org.xerial", "sqlite-jdbc")
+    }
+
+    implementation(Libs.jacodb_api_storage)
+    implementation(Libs.jacodb_storage)
+
+    implementation(Libs.rd_framework)
+    implementation(Libs.ini4j)
+    implementation(Libs.rd_core)
     implementation("commons-cli:commons-cli:1.5.0")
+
+    rdgenModelsCompileClasspath(Libs.rd_gen)
+
     implementation("com.jetbrains.rd:rd-gen:${Versions.rd}")
 
     testImplementation(project(":usvm-core"))
@@ -55,11 +72,9 @@ dependencies {
     testImplementation(project(":usvm-util"))
 }
 
-tasks {
-    withType<KotlinCompile> {
-        kotlinOptions {
-            allWarningsAsErrors = false
-        }
+tasks.withType<KotlinCompile> {
+    compilerOptions {
+        allWarningsAsErrors = false
     }
 }
 
@@ -103,13 +118,13 @@ val generateModels = tasks.register<RdGenTask>("generateProtocolModels") {
     }
 
 }
+val runtimeClasspath = configurations.runtimeClasspath
 
-
-val instrumentationRunnerJar = tasks.register<Jar>("instrumentationJar") {
+val instrumentationRunnerJar = tasks.register<ShadowJar>("instrumentationJar") {
     group = "jar"
     dependsOn.addAll(listOf("compileJava", "compileKotlin", "processResources"))
-    archiveClassifier.set("1.0")
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    archiveBaseName.set("usvm-jvm-instrumentation-runner")
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
     manifest {
         attributes(
             mapOf(
@@ -121,7 +136,9 @@ val instrumentationRunnerJar = tasks.register<Jar>("instrumentationJar") {
         )
     }
 
-    val contents = configurations.runtimeClasspath.get()
+    mergeServiceFiles()
+
+    val contents = runtimeClasspath.get()
         .map { if (it.isDirectory) it else zipTree(it) }
 
     from(contents)
@@ -185,11 +202,9 @@ publishing {
             artifact(collectorsJarTask.get())
         }
 
-//       Instrumentation runner publishing disabled because of runner jar size
-//
-//        create<MavenPublication>("maven-instrumentation-runner") {
-//            artifactId = "usvm-jvm-instrumentation-runner"
-//            artifact(instrumentationRunnerJar.get())
-//        }
+        create<MavenPublication>("maven-instrumentation-runner") {
+            artifactId = "usvm-jvm-instrumentation-runner"
+            artifact(instrumentationRunnerJar.get())
+        }
     }
 }

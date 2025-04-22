@@ -1,11 +1,14 @@
 package org.usvm.instrumentation.instrumentation
 
-import org.jacodb.api.JcClasspath
-import org.jacodb.api.PredefinedPrimitives
-import org.jacodb.api.TypeName
-import org.jacodb.api.cfg.*
-import org.jacodb.api.ext.*
-import org.jacodb.impl.cfg.*
+import org.jacodb.api.jvm.JcClasspath
+import org.jacodb.api.jvm.PredefinedPrimitives
+import org.jacodb.api.jvm.TypeName
+import org.jacodb.api.jvm.cfg.JcRawCallInst
+import org.jacodb.api.jvm.cfg.JcRawFieldRef
+import org.jacodb.api.jvm.cfg.JcRawStaticCallExpr
+import org.jacodb.api.jvm.cfg.JcRawValue
+import org.jacodb.api.jvm.ext.*
+import org.jacodb.impl.cfg.JcRawLong
 import org.jacodb.impl.features.classpaths.virtual.JcVirtualClassImpl
 import org.jacodb.impl.features.classpaths.virtual.JcVirtualMethod
 import org.jacodb.impl.features.classpaths.virtual.JcVirtualMethodImpl
@@ -33,13 +36,13 @@ class TraceHelper(
     private fun createJcVirtualMethod(jMethod: Method): JcVirtualMethod = JcVirtualMethodImpl(
         name = jMethod.name,
         access = jMethod.modifiers,
-        returnType = TypeNameImpl(jMethod.returnType.name),
+        returnType = TypeNameImpl.fromTypeName(jMethod.returnType.name),
         parameters = createJcVirtualMethodParams(jMethod),
         description = ""
     )
 
     private fun createJcVirtualMethodParams(jMethod: Method): List<JcVirtualParameter> =
-        jMethod.parameters.mapIndexed { i, p -> JcVirtualParameter(i, TypeNameImpl(p.type.typeName)) }
+        jMethod.parameters.mapIndexed { i, p -> JcVirtualParameter(i, TypeNameImpl.fromTypeName(p.type.typeName)) }
 
     /**
      * This method create instrumenting method call to insert it in instruction list

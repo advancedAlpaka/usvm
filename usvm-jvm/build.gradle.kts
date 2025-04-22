@@ -1,3 +1,5 @@
+@file:Suppress("PropertyName", "HasPlatformType")
+
 plugins {
     id("usvm.kotlin-conventions")
 }
@@ -5,6 +7,12 @@ plugins {
 val samples by sourceSets.creating {
     java {
         srcDir("src/samples/java")
+    }
+}
+
+val `samples-jdk11` by sourceSets.creating {
+    java {
+        srcDir("src/samples-jdk11/java")
     }
 }
 
@@ -22,27 +30,27 @@ val `usvm-api` by sourceSets.creating {
 
 val approximations by configurations.creating
 val approximationsRepo = "com.github.UnitTestBot.java-stdlib-approximations"
-val approximationsVersion = "d9d6f30985"
+val approximationsVersion = "5f137507d6"
 
 dependencies {
     implementation(project(":usvm-core"))
+    implementation(project(":usvm-jvm-dataflow"))
     implementation(project(":usvm-jvm-instrumentation"))
 
-    implementation("org.jacodb:jacodb-core:${Versions.jcdb}")
-    implementation("org.jacodb:jacodb-analysis:${Versions.jcdb}")
-
-    implementation("org.jacodb:jacodb-approximations:${Versions.jcdb}")
+    implementation(Libs.jacodb_api_jvm)
+    implementation(Libs.jacodb_core)
+    implementation(Libs.jacodb_approximations)
 
     implementation(`usvm-api`.output)
 
-    implementation("io.ksmt:ksmt-yices:${Versions.ksmt}")
-    implementation("io.ksmt:ksmt-cvc5:${Versions.ksmt}")
-    implementation("io.ksmt:ksmt-symfpu:${Versions.ksmt}")
-    implementation("io.ksmt:ksmt-runner:${Versions.ksmt}")
+    implementation(Libs.ksmt_runner)
+    implementation(Libs.ksmt_yices)
+    implementation(Libs.ksmt_cvc5)
+    implementation(Libs.ksmt_symfpu)
 
-    testImplementation("io.mockk:mockk:${Versions.mockk}")
-    testImplementation("org.junit.jupiter:junit-jupiter-params:${Versions.junitParams}")
-    testImplementation("ch.qos.logback:logback-classic:${Versions.logback}")
+    testImplementation(Libs.mockk)
+    testImplementation(Libs.junit_jupiter_params)
+    testImplementation(Libs.logback)
 
     testImplementation(samples.output)
 
@@ -56,20 +64,22 @@ dependencies {
 
 val `usvm-apiCompileOnly`: Configuration by configurations.getting
 dependencies {
-    `usvm-apiCompileOnly`("org.jacodb:jacodb-api:${Versions.jcdb}")
+    `usvm-apiCompileOnly`(Libs.jacodb_api_jvm)
 }
 
 val samplesImplementation: Configuration by configurations.getting
 
 dependencies {
-    samplesImplementation("org.projectlombok:lombok:${Versions.samplesLombok}")
-    samplesImplementation("org.slf4j:slf4j-api:${Versions.samplesSl4j}")
-    samplesImplementation("javax.validation:validation-api:${Versions.samplesJavaxValidation}")
-    samplesImplementation("com.github.stephenc.findbugs:findbugs-annotations:${Versions.samplesFindBugs}")
-    samplesImplementation("org.jetbrains:annotations:${Versions.samplesJetbrainsAnnotations}")
-    testImplementation(project(":usvm-jvm-instrumentation"))
+    samplesImplementation("org.projectlombok:lombok:${Versions.Samples.lombok}")
+    samplesImplementation("org.slf4j:slf4j-api:${Versions.Samples.slf4j}")
+    samplesImplementation("javax.validation:validation-api:${Versions.Samples.javaxValidation}")
+    samplesImplementation("com.github.stephenc.findbugs:findbugs-annotations:${Versions.Samples.findBugs}")
+    samplesImplementation("org.jetbrains:annotations:${Versions.Samples.jetbrainsAnnotations}")
+
     // Use usvm-api in samples for makeSymbolic, assume, etc.
     samplesImplementation(`usvm-api`.output)
+
+    testImplementation(project(":usvm-jvm-instrumentation"))
 }
 
 val `sample-approximationsCompileOnly`: Configuration by configurations.getting
@@ -77,8 +87,8 @@ val `sample-approximationsCompileOnly`: Configuration by configurations.getting
 dependencies {
     `sample-approximationsCompileOnly`(samples.output)
     `sample-approximationsCompileOnly`(`usvm-api`.output)
-    `sample-approximationsCompileOnly`("org.jacodb:jacodb-api:${Versions.jcdb}")
-    `sample-approximationsCompileOnly`("org.jacodb:jacodb-approximations:${Versions.jcdb}")
+    `sample-approximationsCompileOnly`(Libs.jacodb_api_jvm)
+    `sample-approximationsCompileOnly`(Libs.jacodb_approximations)
 }
 
 val `usvm-api-jar` = tasks.register<Jar>("usvm-api-jar") {
@@ -89,9 +99,20 @@ val `usvm-api-jar` = tasks.register<Jar>("usvm-api-jar") {
 val testSamples by configurations.creating
 val testSamplesWithApproximations by configurations.creating
 
+val compileSamplesJdk11 = tasks.register<JavaCompile>("compileSamplesJdk11") {
+    sourceCompatibility = JavaVersion.VERSION_11.toString()
+    targetCompatibility = JavaVersion.VERSION_11.toString()
+
+    source = `samples-jdk11`.java
+    classpath = `samples-jdk11`.compileClasspath
+    options.sourcepath = `samples-jdk11`.java
+    destinationDirectory = `samples-jdk11`.java.destinationDirectory
+}
+
 dependencies {
     testSamples(samples.output)
     testSamples(`usvm-api`.output)
+    testSamples(files(`samples-jdk11`.java.destinationDirectory))
 
     testSamplesWithApproximations(samples.output)
     testSamplesWithApproximations(`usvm-api`.output)
@@ -101,7 +122,7 @@ dependencies {
 
 tasks.withType<Test> {
     dependsOn(`usvm-api-jar`)
-    dependsOn(testSamples, testSamplesWithApproximations)
+    dependsOn(compileSamplesJdk11, testSamples, testSamplesWithApproximations)
 
     val usvmApiJarPath = `usvm-api-jar`.get().outputs.files.singleFile
     val usvmApproximationJarPath = approximations.resolvedConfiguration.files.single()

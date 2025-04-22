@@ -1,10 +1,9 @@
 package org.usvm.instrumentation.instrumentation
 
-import org.jacodb.api.JcClassOrInterface
-import org.jacodb.api.JcField
-import org.jacodb.api.JcMethod
-import org.jacodb.api.cfg.JcInst
-import org.jacodb.api.ext.methods
+import org.jacodb.api.jvm.JcClassOrInterface
+import org.jacodb.api.jvm.JcField
+import org.jacodb.api.jvm.JcMethod
+import org.jacodb.api.jvm.cfg.JcInst
 import org.usvm.instrumentation.util.enclosingClass
 import org.usvm.instrumentation.util.enclosingMethod
 
@@ -68,7 +67,7 @@ abstract class Tracer<T : Trace> {
 
     private fun encodeMethod(jcClass: JcClassOrInterface, jcMethod: JcMethod): EncodedMethod {
         val encodedClass = encodeClass(jcClass)
-        val methodIndex = jcClass.methods
+        val methodIndex = jcClass.declaredMethods
             .sortedBy { it.description }
             .indexOf(jcMethod)
             .also { if (it == -1) error("Encoding error") }

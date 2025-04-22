@@ -17,6 +17,7 @@ import org.usvm.util.isException
 import kotlin.math.pow
 
 internal class RecursionTest : ApproximationsTestRunner() {
+
     @UsvmTest([Options([PathSelectionStrategy.CLOSEST_TO_UNCOVERED_RANDOM])])
     fun testFactorial(options: UMachineOptions) {
         withOptions(options) {
@@ -81,23 +82,31 @@ internal class RecursionTest : ApproximationsTestRunner() {
 
     @Test
     fun vertexSumTest() {
-        checkDiscoveredProperties(
-            Recursion::vertexSum,
-            between(2..3),
-            { _, x, _ -> x <= 10 },
-            { _, x, _ -> x > 10 }
-        )
+        val options = options.copy(stepsFromLastCovered = 4500L)
+        withOptions(options) {
+            checkDiscoveredProperties(
+                Recursion::vertexSum,
+                between(2..3),
+                { _, x, _ -> x <= 10 },
+                { _, x, _ -> x > 10 }
+            )
+        }
     }
 
     @Test
     fun recursionWithExceptionTest() {
-        checkDiscoveredPropertiesWithExceptions(
-            Recursion::recursionWithException,
-            ge(3),
-            { _, x, r -> x < 42 && r.isException<IllegalArgumentException>() },
-            { _, x, r -> x == 42 && r.isException<IllegalArgumentException>() },
-            { _, x, r -> x > 42 && r.isException<IllegalArgumentException>() },
-        )
+        // Two goto statements are expected to not be covered
+        // The expected coverage is 15 out of 17 instructions
+        val options = options.copy(stopOnCoverage = 88)
+        withOptions(options) {
+            checkDiscoveredPropertiesWithExceptions(
+                Recursion::recursionWithException,
+                ge(3),
+                { _, x, r -> x < 42 && r.isException<IllegalArgumentException>() },
+                { _, x, r -> x == 42 && r.isException<IllegalArgumentException>() },
+                { _, x, r -> x > 42 && r.isException<IllegalArgumentException>() },
+            )
+        }
     }
 
     @UsvmTest([Options([PathSelectionStrategy.RANDOM_PATH])])

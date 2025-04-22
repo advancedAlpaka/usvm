@@ -3,8 +3,8 @@ package org.usvm.instrumentation.executor
 import example.ConcolicTests
 import kotlinx.coroutines.runBlocking
 import mu.KotlinLogging
-import org.jacodb.api.JcClasspath
-import org.jacodb.api.ext.findClass
+import org.jacodb.api.jvm.JcClasspath
+import org.jacodb.api.jvm.ext.findClass
 import org.jacodb.impl.features.InMemoryHierarchy
 import org.jacodb.impl.jacodb
 import org.junit.jupiter.api.BeforeAll

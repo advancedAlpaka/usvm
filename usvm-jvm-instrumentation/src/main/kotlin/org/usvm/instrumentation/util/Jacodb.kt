@@ -1,9 +1,10 @@
 package org.usvm.instrumentation.util
 
-import org.jacodb.api.*
-import org.jacodb.api.cfg.JcInst
-import org.jacodb.api.ext.*
+import org.jacodb.api.jvm.*
+import org.jacodb.api.jvm.cfg.JcInst
+import org.jacodb.api.jvm.ext.*
 import org.jacodb.impl.types.TypeNameImpl
+import org.objectweb.asm.tree.MethodNode
 import org.usvm.instrumentation.testcase.executor.TestExecutorException
 import java.lang.reflect.Constructor
 import java.lang.reflect.Field
@@ -23,13 +24,7 @@ fun JcClasspath.findFieldByFullNameOrNull(fieldFullName: String): JcField? {
 operator fun JcClasspath.get(klass: Class<*>) = this.findClassOrNull(klass.name)
 
 val JcClassOrInterface.typename
-    get() = TypeNameImpl(this.name)
-
-val JcMethod.typename
-    get() = TypeNameImpl(this.name)
-
-val JcTypedMethod.typename
-    get() = TypeNameImpl(this.name)
+    get() = TypeNameImpl.fromTypeName(this.name)
 
 fun JcType.toStringType(): String =
     when (this) {
@@ -39,7 +34,7 @@ fun JcType.toStringType(): String =
         else -> typeName
     }
 
-fun JcType.getTypename() = TypeNameImpl(this.typeName)
+fun JcType.getTypename() = TypeNameImpl.fromTypeName(this.typeName)
 
 val JcInst.enclosingClass
     get() = this.location.method.enclosingClass
@@ -167,3 +162,6 @@ private fun Array<Class<*>>.toJcdbFormat(): String =
 
 fun Method.isSameSignatures(jcMethod: JcMethod) =
     jcdbSignature == jcMethod.jcdbSignature
+
+fun JcMethod.isSameSignature(mn: MethodNode): Boolean =
+    withAsmNode { it.isSameSignature(mn) }

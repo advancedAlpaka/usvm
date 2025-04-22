@@ -3,12 +3,12 @@ package org.usvm.machine.interpreter
 import io.ksmt.expr.KExpr
 import io.ksmt.sort.KBoolSort
 import io.ksmt.utils.asExpr
-import org.jacodb.api.JcClassOrInterface
-import org.jacodb.api.JcRefType
-import org.jacodb.api.JcType
-import org.jacodb.api.ext.enumValues
-import org.jacodb.api.ext.isEnum
-import org.jacodb.api.ext.toType
+import org.jacodb.api.jvm.JcClassOrInterface
+import org.jacodb.api.jvm.JcRefType
+import org.jacodb.api.jvm.JcType
+import org.jacodb.api.jvm.ext.enumValues
+import org.jacodb.api.jvm.ext.isEnum
+import org.jacodb.api.jvm.ext.toType
 import org.usvm.UBoolExpr
 import org.usvm.UConcreteHeapRef
 import org.usvm.UHeapRef
@@ -188,15 +188,8 @@ private fun resolveVirtualInvokeWithoutModel(
         initialGuard = ctx.trueExpr,
         ignoreNullRefs = true,
         collapseHeapRefs = false,
+        staticIsConcrete = true,
         blockOnConcrete = { _, (ref, condition) ->
-            val lambdaCallSite = findLambdaCallSite(methodCall, scope, ref)
-            if (lambdaCallSite != null) {
-                lambdaCallSitesWithConditions += lambdaCallSite to condition
-            } else {
-                refsWithConditions += ref to condition
-            }
-        },
-        blockOnStatic = { _, (ref, condition) ->
             val lambdaCallSite = findLambdaCallSite(methodCall, scope, ref)
             if (lambdaCallSite != null) {
                 lambdaCallSitesWithConditions += lambdaCallSite to condition

@@ -2,24 +2,28 @@ package org.usvm.machine.interpreter
 
 import io.ksmt.utils.asExpr
 import mu.KLogging
-import org.jacodb.api.JcArrayType
-import org.jacodb.api.JcClassOrInterface
-import org.jacodb.api.JcClassType
-import org.jacodb.api.JcMethod
-import org.jacodb.api.JcPrimitiveType
-import org.jacodb.api.JcRefType
-import org.jacodb.api.JcType
-import org.jacodb.api.cfg.*
-import org.jacodb.api.ext.boolean
-import org.jacodb.api.ext.cfg.callExpr
-import org.jacodb.api.ext.ifArrayGetElementType
-import org.jacodb.api.ext.isEnum
-import org.jacodb.api.ext.toType
+import org.jacodb.api.jvm.JcArrayType
+import org.jacodb.api.jvm.JcClassOrInterface
+import org.jacodb.api.jvm.JcClassType
+import org.jacodb.api.jvm.JcMethod
+import org.jacodb.api.jvm.JcPrimitiveType
+import org.jacodb.api.jvm.JcRefType
+import org.jacodb.api.jvm.JcType
+import org.jacodb.api.jvm.cfg.*
+import org.jacodb.api.jvm.ext.boolean
+import org.jacodb.api.jvm.ext.cfg.callExpr
+import org.jacodb.api.jvm.ext.ifArrayGetElementType
+import org.jacodb.api.jvm.ext.isEnum
+import org.jacodb.api.jvm.ext.toType
 import org.usvm.*
-import org.usvm.api.*
+import org.usvm.api.allocateArray
+import org.usvm.api.allocateStaticRef
+import org.usvm.api.evalTypeEquals
+import org.usvm.api.mapTypeStream
 import org.usvm.api.targets.JcTarget
 import org.usvm.collection.array.UArrayIndexLValue
 import org.usvm.collection.field.UFieldLValue
+import org.usvm.collections.immutable.internal.MutabilityOwnership
 import org.usvm.forkblacklists.UForkBlackList
 import org.usvm.instrumentation.testcase.descriptor.UTestArrayDescriptor
 import org.usvm.instrumentation.testcase.descriptor.UTestConstantDescriptor
@@ -49,12 +53,12 @@ import org.usvm.machine.state.throwExceptionAndDropStackFrame
 import org.usvm.machine.state.throwExceptionWithoutStackFrameDrop
 import org.usvm.memory.ULValue
 import org.usvm.memory.URegisterStackLValue
-import org.usvm.solver.USatResult
 import org.usvm.targets.UTargetsSet
 import org.usvm.types.singleOrNull
 import org.usvm.util.name
 import org.usvm.util.outerClassInstanceField
 import org.usvm.util.write
+import org.usvm.utils.ensureSat
 import org.usvm.utils.logAssertFailure
 import org.usvm.utils.onStateDeath
 import java.util.IdentityHashMap
@@ -79,7 +83,8 @@ class JcInterpreter(
     }
 
     fun getInitialState(method: JcMethod, targets: List<JcTarget> = emptyList()): JcState {
-        val state = JcState(ctx, method, targets = UTargetsSet.from(targets), deviatedFromConcolicTrace = false)
+        val initOwnership = MutabilityOwnership()
+        val state = JcState(ctx, initOwnership, method, targets = UTargetsSet.from(targets), deviatedFromConcolicTrace = false)
         val typedMethod = with(applicationGraph) { method.typed }
 
         val entrypointArguments = mutableListOf<Pair<JcRefType, UHeapRef>>()
@@ -117,7 +122,7 @@ class JcInterpreter(
 
         val solver = ctx.solver<JcType>()
 
-        val model = (solver.check(state.pathConstraints) as USatResult).model
+        val model = solver.check(state.pathConstraints).ensureSat().model
         state.models = listOf(model)
 
         val entrypointInst = JcMethodEntrypointInst(method, entrypointArguments)
@@ -290,6 +295,16 @@ class JcInterpreter(
                 observer?.onMethodCallWithResolvedArguments(simpleValueResolver, stmt, scope)
 
                 if (approximateMethod(scope, stmt)) {
+                    return
+                }
+
+                if (method.isFinal) {
+                    // Case for approximated interfaces
+                    with (stmt) {
+                        scope.doWithState {
+                            newStmt(JcConcreteMethodCallInst(location, method, arguments, returnSite))
+                        }
+                    }
                     return
                 }
 
@@ -686,7 +701,7 @@ class JcInterpreter(
     private val localVarToIdx = mutableMapOf<JcMethod, MutableMap<String, Int>>() // (method, localName) -> idx
 
     // TODO: now we need to explicitly evaluate indices of registers, because we don't have specific ULValues
-    private fun mapLocalToIdxMapper(method: JcMethod, local: JcLocal) =
+    private fun mapLocalToIdxMapper(method: JcMethod, local: JcImmediate) =
         when (local) {
             is JcLocalVar -> localVarToIdx
                 .getOrPut(method) { mutableMapOf() }

@@ -1,8 +1,14 @@
 package org.usvm.instrumentation.instrumentation
 
 import org.jacodb.api.*
-import org.jacodb.api.cfg.*
-import org.jacodb.api.ext.*
+import org.jacodb.api.jvm.JcClasspath
+import org.jacodb.api.jvm.JcMethod
+import org.jacodb.api.jvm.TypeName
+import org.jacodb.api.jvm.cfg.JcMutableInstList
+import org.jacodb.api.jvm.cfg.*
+import org.jacodb.api.jvm.cfg.JcRawCallExpr
+import org.jacodb.api.jvm.cfg.JcRawInst
+import org.jacodb.api.jvm.ext.*
 import org.jacodb.impl.cfg.*
 import org.jacodb.impl.cfg.util.isPrimitive
 import org.jacodb.impl.types.TypeNameImpl
@@ -24,15 +30,15 @@ class JcRuntimeConcolicInstrumenter(
     private val long = jcClasspath.long.getTypename()
     private val boolean = jcClasspath.boolean.getTypename()
     private val objectType = jcClasspath.objectType.getTypename()
-    private val throwable = TypeNameImpl(java.lang.Throwable::class.java.name)
+    private val throwable = TypeNameImpl.fromTypeName(java.lang.Throwable::class.java.name)
     private val void = jcClasspath.void.getTypename()
 
     private val byteArray = with(jcClasspath) { arrayTypeOf(byte).getTypename() }
     private val arrayOfByteArray = with(jcClasspath) { arrayTypeOf(arrayTypeOf(byte)).getTypename() }
-    private val heapObjectDescriptor = TypeNameImpl(ConcolicCollector.HeapObjectDescriptor::class.java.name)
-    private val identityHashMap = TypeNameImpl(ConcolicCollector.IdentityHashMap::class.java.name)
-    private val instructionInfo = TypeNameImpl(ConcolicCollector.InstructionInfo::class.java.name)
-    private val instructionInfoArray = TypeNameImpl("${instructionInfo.typeName}[]")
+    private val heapObjectDescriptor = TypeNameImpl.fromTypeName(ConcolicCollector.HeapObjectDescriptor::class.java.name)
+    private val identityHashMap = TypeNameImpl.fromTypeName(ConcolicCollector.IdentityHashMap::class.java.name)
+    private val instructionInfo = TypeNameImpl.fromTypeName(ConcolicCollector.InstructionInfo::class.java.name)
+    private val instructionInfoArray = TypeNameImpl.fromTypeName("${instructionInfo.typeName}[]")
 
     private val stackPointer = concolicInfoHelper.createStaticFieldRef("stackPointer", int)
     private val argumentsFlagsStack = concolicInfoHelper.createStaticFieldRef("argumentsFlagsStack", arrayOfByteArray)
@@ -618,7 +624,7 @@ class JcRuntimeConcolicInstrumenter(
         }
         return localVar
     }
-    private fun creatLocalVar(type: TypeName) = JcRawLocalVar("%${localVariablesNum++}", type)
+    private fun creatLocalVar(type: TypeName) = localVariablesNum++.let { JcRawLocalVar(it, "%${it}", type) }
 
     private var labelsNum = 0
     private fun newLabelName() = "#${labelsNum++}"

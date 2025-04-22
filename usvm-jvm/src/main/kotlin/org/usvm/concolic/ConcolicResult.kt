@@ -1,6 +1,6 @@
 package org.usvm.concolic
 
-import org.jacodb.api.cfg.JcInst
+import org.jacodb.api.jvm.cfg.JcInst
 import org.usvm.instrumentation.testcase.UTest
 import org.usvm.instrumentation.testcase.api.UTestExecutionResult
 import org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor

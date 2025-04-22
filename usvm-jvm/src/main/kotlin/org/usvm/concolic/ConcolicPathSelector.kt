@@ -1,6 +1,6 @@
 package org.usvm.concolic
 
-import org.jacodb.api.cfg.JcInst
+import org.jacodb.api.jvm.cfg.JcInst
 import org.usvm.UPathSelector
 import org.usvm.machine.state.JcState
 

@@ -1,7 +1,7 @@
 package org.usvm.instrumentation.executor
 
 import com.jetbrains.rd.util.first
-import org.jacodb.api.ext.findTypeOrNull
+import org.jacodb.api.jvm.ext.findTypeOrNull
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Disabled
@@ -116,7 +116,6 @@ class ConcreteExecutorTests: UTestConcreteExecutorTest() {
     }
 
     @Test
-    @Disabled
     fun `static interface method call test`() = executeTest {
         val uTest = UTestCreator.StaticInterfaceMethodCall.callStaticInterfaceMethod(jcClasspath)
         val res = uTestConcreteExecutor.executeAsync(uTest)
