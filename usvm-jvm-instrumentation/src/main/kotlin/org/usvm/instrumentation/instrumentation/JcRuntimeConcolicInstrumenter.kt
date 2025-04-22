@@ -573,7 +573,7 @@ class JcRuntimeConcolicInstrumenter(
             val incrementedStackPointerLocalVar = newLocalVar(int, JcRawAddExpr(int, stackPointer, JcRawInt(1)))
 
             `if`(JcRawGeExpr(boolean, incrementedStackPointerLocalVar, stackLengthLocalVar)) {
-                concolicInfoHelper.createResizeFlagsStacksMethodCall()
+                add(concolicInfoHelper.createResizeFlagsStacksMethodCall())
             }
             add(JcRawAssignInst(owner,
                 JcRawArrayAccess(argumentsFlagsStack, incrementedStackPointerLocalVar, byteArray),

@@ -1299,13 +1299,11 @@ class JcSimpleValueResolver(
             val messageField = throwableClassType.declaredFields.first { it.name == "detailMessage" }
 
             val messageFieldLValue = UFieldLValue(ctx.addressSort, ref, messageField)
-            memory.types.allocate(ref.address, messageField.fieldType)
             val messageFieldValue = visitJcStringConstant(JcStringConstant(exceptionDescriptor.message, ctx.stringType))
             memory.write(messageFieldLValue, messageFieldValue)
 
             val stackTraceField = throwableClassType.declaredFields.first { it.name == "stackTrace" }
             val stackTraceFieldLValue = UFieldLValue(ctx.addressSort, ref, stackTraceField)
-            memory.types.allocate(ref.address, stackTraceField.fieldType)
             val stackTrace = UTestArrayDescriptor(ctx.cp.findType("java.lang.StackTraceElement"),
                 exceptionDescriptor.stackTrace.size, exceptionDescriptor.stackTrace, -1)
             memory.write(stackTraceFieldLValue, stackTrace.toUExpr())
@@ -1315,15 +1313,13 @@ class JcSimpleValueResolver(
 
         is UTestObjectDescriptor, is UTestEnumValueDescriptor -> scope.calcOnState {
             val objectDescriptor = this@toUExpr
-            val ref =  objectsCache.getOrPut(objectDescriptor) { ctx.allocateConcreteRef() }
+            val ref = objectsCache.getOrPut(objectDescriptor) { ctx.allocateConcreteRef() }
+            memory.types.allocate(ref.address, objectDescriptor.type)
 
             val fields = if (objectDescriptor is UTestObjectDescriptor) objectDescriptor.fields
                         else (objectDescriptor as UTestEnumValueDescriptor).fields
             for ((field, fieldDescriptor) in fields) {
                 val fieldLValue = UFieldLValue(ctx.addressSort, ref, field)
-
-                memory.types.allocate(ref.address, fieldDescriptor.type)
-
                 val fieldValue = fieldDescriptor.toUExpr()
                 memory.write(fieldLValue, fieldValue)
             }
