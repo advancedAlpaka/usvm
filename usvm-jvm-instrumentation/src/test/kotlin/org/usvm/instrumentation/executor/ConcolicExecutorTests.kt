@@ -104,7 +104,7 @@ class ConcolicExecutorTests {
     }
 
     private fun ConcolicResult.printStatistics() {
-        logger.info {
+        println(
             buildString {
                 appendLine()
                 append(concreteRuns.size)
@@ -149,7 +149,7 @@ class ConcolicExecutorTests {
                 append(symbolicExecutions.size)
                 appendLine(" symbolic executions")
             }
-        }
+        )
     }
 
     private fun ConcreteRun.stringify(testExpr: UTestExpression): String {

@@ -629,10 +629,6 @@ class JcRuntimeConcolicInstrumenter(
     private var labelsNum = 0
     private fun newLabelName() = "#${labelsNum++}"
 
-    // TODO: use index property from new version of JacoDB
-    private val JcRawLocalVar.index: Int
-        get() = name.drop(1).toInt()
-
     private val JcRawLabelInst.index: Int
         get() = name.drop(1).toInt()
 

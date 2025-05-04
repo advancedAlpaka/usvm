@@ -94,11 +94,10 @@ open class JcRuntimeTraceInstrumenter(
         val jcClass = jcClasspath.findClassOrNull(className) ?: return classNode
         val asmMethods = classNode.methods
         val methodsToInstrument = if (jcClass.isEnum) {
-            jcClass.declaredMethods.filterNot { !instrumentConstructors && it.isConstructor || it.isClassInitializer ||
-                    it.name == "values" || it.name == "valueOf" }
+            jcClass.declaredMethods.filterNot { it.isClassInitializer || it.name == "values" || it.name == "valueOf" }
         } else {
-            jcClass.declaredMethods.filterNot { !instrumentConstructors && it.isConstructor || it.isClassInitializer }
-        }
+            jcClass.declaredMethods.filterNot { it.isClassInitializer }
+        }.filterNot { if (instrumentConstructors) it.isDefaultEmptyConstructor() else it.isConstructor }
         //Copy of clinit method to be able to rollback statics between executions!
         //We are not able to call <clinit> method directly with reflection
         asmMethods.find { it.name == "<clinit>" }?.let { clinitNode ->
@@ -118,4 +117,8 @@ open class JcRuntimeTraceInstrumenter(
         const val GENERATED_CLINIT_NAME = "generatedClinit0"
     }
 
+    private fun JcMethod.isDefaultEmptyConstructor(): Boolean {
+        return isConstructor && parameters.isEmpty() &&
+                rawInstList.filter { it !is JcRawLabelInst && it !is JcRawLineNumberInst }.size == 2
+    }
 }
