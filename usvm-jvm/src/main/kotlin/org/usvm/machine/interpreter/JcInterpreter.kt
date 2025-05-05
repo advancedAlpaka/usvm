@@ -272,6 +272,11 @@ class JcInterpreter(
                 val methodInstList = method.instList
                 entryPoint = methodInstList.getStmt(methodInstList.indexOf(entryPoint))
 
+                if (!methodInstList.contains(entryPoint)) {
+                    mockMethod(scope, stmt, applicationGraph)
+                    return
+                }
+
                 handleInnerClassMethodCall(
                     scope,
                     method.enclosingClass.toType(),
@@ -298,7 +303,7 @@ class JcInterpreter(
                     return
                 }
 
-                if (method.isFinal) {
+                if (method.isFinal || method.enclosingClass.isFinal) {
                     // Case for approximated interfaces
                     with (stmt) {
                         scope.doWithState {
@@ -650,7 +655,7 @@ class JcInterpreter(
         }
     }
 
-    private fun exprResolverWithScope(scope: JcStepScope, stmt: JcInst) =
+    private fun exprResolverWithScope(scope: JcStepScope, stmt: JcInst?) =
         JcExprResolver(
             ctx,
             scope,
@@ -663,7 +668,8 @@ class JcInterpreter(
             objectAllocatedRefs
         ) { scope.arrayAllocator(it) }
 
-    private fun getConcreteMap(stmt: JcInst): Map<JcExpr, UTestValueDescriptor> {
+    private fun getConcreteMap(stmt: JcInst?): Map<JcExpr, UTestValueDescriptor> {
+        stmt ?: return emptyMap()
         val indexOfStmt = concolicTrace?.indexOf(stmt)
         if (concreteValues == null || indexOfStmt == null || indexOfStmt == -1) {
             return emptyMap()
@@ -688,6 +694,8 @@ class JcInterpreter(
                 is JcLocal -> listOf(expr)
                 is JcFieldRef -> listOf(expr.instance, expr)
                 is JcArrayAccess -> listOf(expr.array, expr.index, expr)
+
+                is JcThis -> listOf(expr)
 
                 else -> error("Unexpected expression $expr")
             }
@@ -763,7 +771,7 @@ class JcInterpreter(
 
     private fun JcStepScope.arrayAllocator(value: UTestArrayDescriptor): UConcreteHeapRef =
         arrayAllocatedRefs.getOrPut(value) {
-            calcOnState { memory.allocateArray(value.type, ctx.sizeSort, ctx.mkSizeExpr(value.length)) }
+            calcOnState { memory.allocateArray(value.elementType, ctx.sizeSort, ctx.mkSizeExpr(value.length)) }
         }
 
     private val typeInstanceAllocatedRefs = mutableMapOf<JcTypeInfo, UConcreteHeapRef>()
@@ -807,7 +815,7 @@ class JcInterpreter(
     private val approximationResolver = JcMethodApproximationResolver(ctx, applicationGraph)
 
     private fun approximateMethod(scope: JcStepScope, methodCall: JcMethodCall): Boolean {
-        val exprResolver = exprResolverWithScope(scope, methodCall.method.instList.first())
+        val exprResolver = exprResolverWithScope(scope, methodCall.method.instList.firstOrNull())
         return approximationResolver.approximate(scope, exprResolver, methodCall)
     }
 }

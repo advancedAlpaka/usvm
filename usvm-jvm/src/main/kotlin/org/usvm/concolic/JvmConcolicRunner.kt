@@ -128,64 +128,83 @@ class JvmConcolicRunner(jarPaths: List<String>, private val method: JcMethod) : 
             return null
         }
 
-        if (method.isStatic) {
-            val allocateArgumentsFlagsStack = UTestArraySetStatement(
+        val allocateArgumentsFlagsStack = UTestArraySetStatement(
+            UTestGetStaticFieldExpression(
+                JcUnknownField(
+                    JcUnknownClass(classpath, "org.usvm.instrumentation.collector.trace.ConcolicCollector"),
+                    "argumentsFlagsStack",
+                    Opcodes.ACC_PUBLIC,
+                    classpath.arrayTypeOf(classpath.arrayTypeOf(classpath.byte)).getTypename()
+                )
+            ),
+            UTestIntExpression(0, classpath.int),
+            UTestCreateArrayExpression(
+                classpath.byte,
+                UTestIntExpression(
+                    method.parameters.size,
+                    classpath.int
+                )
+            )
+        )
+
+        val initializeArgumentsFlagsStack = (0..<method.parameters.size).map {
+            UTestArraySetStatement(
+                UTestArrayGetExpression(
+                    UTestGetStaticFieldExpression(
+                        JcUnknownField(
+                            JcUnknownClass(classpath, "org.usvm.instrumentation.collector.trace.ConcolicCollector"),
+                            "argumentsFlagsStack",
+                            Opcodes.ACC_PUBLIC,
+                            classpath.arrayTypeOf(classpath.arrayTypeOf(classpath.byte)).getTypename()
+                        )
+                    ),
+                    UTestIntExpression(0, classpath.int)
+                ),
+                UTestIntExpression(it, classpath.int),
+                UTestByteExpression(1, classpath.byte)
+            )
+        }
+
+        val concolicCollectorInitialization = mutableListOf(allocateArgumentsFlagsStack)
+        concolicCollectorInitialization.addAll(initializeArgumentsFlagsStack)
+
+        if (!method.isStatic) {
+            val setThisIsSymbolic = UTestArraySetStatement(
                 UTestGetStaticFieldExpression(
                     JcUnknownField(
                         JcUnknownClass(classpath, "org.usvm.instrumentation.collector.trace.ConcolicCollector"),
-                        "argumentsFlagsStack",
+                        "thisFlagsStack",
                         Opcodes.ACC_PUBLIC,
-                        classpath.arrayTypeOf(classpath.arrayTypeOf(classpath.byte)).getTypename()
+                        classpath.arrayTypeOf(classpath.byte).getTypename()
                     )
                 ),
                 UTestIntExpression(0, classpath.int),
-                UTestCreateArrayExpression(classpath.byte,
-                    UTestIntExpression(
-                        method.parameters.size,
-                        classpath.int
-                    )
-                )
+                UTestByteExpression(1, classpath.byte)
             )
-
-            val initializeArgumentsFlagsStack = (0..<method.parameters.size).map {
-                UTestArraySetStatement(
-                    UTestArrayGetExpression(
-                        UTestGetStaticFieldExpression(
-                            JcUnknownField(
-                                JcUnknownClass(classpath, "org.usvm.instrumentation.collector.trace.ConcolicCollector"),
-                                "argumentsFlagsStack",
-                                Opcodes.ACC_PUBLIC,
-                                classpath.arrayTypeOf(classpath.arrayTypeOf(classpath.byte)).getTypename()
-                            )
-                        ),
-                        UTestIntExpression(0, classpath.int)
-                    ),
-                    UTestIntExpression(it, classpath.int),
-                    UTestByteExpression(1, classpath.byte)
-                )
-            }
-
-            val concolicCollectorInitialization = listOf(allocateArgumentsFlagsStack) + initializeArgumentsFlagsStack
-            val uTest = if (state != null) {
-                val generatedTest = MemoryScope(state.ctx, state.models.first(), state.memory,
-                    with(applicationGraph) { method.typed })
-                    .withMode(JcTestStateResolver.ResolveMode.MODEL) { (this as MemoryScope).createUTest() }
-                UTest(
-                    concolicCollectorInitialization + generatedTest.initStatements,
-                    generatedTest.callMethodExpression
-                )
-            } else {
-                val args = generateInitialArgs()
-                UTest(concolicCollectorInitialization, UTestStaticMethodCall(method, args))
-            }
-
-            return if (alreadyGeneratedTests.add(uTest)) uTest else null
+            concolicCollectorInitialization.add(setThisIsSymbolic)
         }
-        TODO("support instance methods")
+
+        val uTest = if (state != null) {
+            val generatedTest = MemoryScope(state.ctx, state.models.first(), state.memory,
+                with(applicationGraph) { method.typed })
+                .withMode(JcTestStateResolver.ResolveMode.MODEL) { (this as MemoryScope).createUTest() }
+            UTest(
+                concolicCollectorInitialization + generatedTest.initStatements,
+                generatedTest.callMethodExpression
+            )
+        } else {
+            val args = generateInitialArgs()
+            val methodCall = if (method.isStatic)
+                UTestStaticMethodCall(method, args)
+            else
+                UTestMethodCall(UTestAllocateMemoryCall(method.enclosingClass), method, args)
+            UTest(concolicCollectorInitialization, methodCall)
+        }
+
+        return if (alreadyGeneratedTests.add(uTest)) uTest else null
     }
 
     private fun generateInitialArgs(): List<UTestExpression> {
-        // TODO receiver for instance methods
         return method.parameters.mapIndexed { _, param ->
             when (val jcType = param.type.toJcType(classpath)!!) {
                 classpath.int -> UTestIntExpression(0, jcType)
