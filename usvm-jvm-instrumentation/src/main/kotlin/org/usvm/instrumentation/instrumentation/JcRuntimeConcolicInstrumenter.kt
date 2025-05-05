@@ -237,17 +237,15 @@ class JcRuntimeConcolicInstrumenter(
     }
 
     override fun atMethodStart(jcMethod: JcMethod, instrumentedInstructionsList: JcMutableInstList<JcRawInst>) {
-        val instructions = jcMethod.rawInstList.asSequence()
-
         owner = jcMethod
 
-        localVariablesNum = instructions
+        localVariablesNum = instrumentedInstructionsList
             .flatMap { it.operands }
             .filterIsInstance<JcRawLocalVar>()
             .maxOfOrNull { it.index }
             ?.let { it + 1 } ?: 0
 
-        labelsNum = instructions
+        labelsNum = instrumentedInstructionsList
             .filterIsInstance<JcRawLabelInst>()
             .maxOfOrNull { it.index }
             ?.let { it + 1 } ?: 0
@@ -269,23 +267,26 @@ class JcRuntimeConcolicInstrumenter(
             instrumentedInstructionsList.insertBefore(firstMethodInstruction, variablesStackFrameAllocation)
         }
 
-        val startLabel = if (jcMethod.isConstructor) "#1" else "#0"
-        val finallyBlockEntry = JcRawCatchEntry(
-            throwable,
-            JcRawLabelRef(startLabel),
-            JcRawLabelRef("#${labelsNum}")
-        )
-        val handlerLabel = newLabelName()
-        val catchVar = creatLocalVar(throwable)
+        val startLabel = if (jcMethod.isConstructor && labelsNum != 0) "#1" else "#0"
+        val endLabel = "#${labelsNum}"
+        if (startLabel != endLabel) {
+            val finallyBlockEntry = JcRawCatchEntry(
+                throwable,
+                JcRawLabelRef(startLabel),
+                JcRawLabelRef(endLabel)
+            )
+            val handlerLabel = newLabelName()
+            val catchVar = creatLocalVar(throwable)
 
-        val exceptionsHandler = buildList {
-            add(JcRawLabelInst(owner, handlerLabel))
-            add(JcRawCatchInst(owner, catchVar, JcRawLabelRef(handlerLabel), listOf(finallyBlockEntry)))
-            addAll(getOnExitFunctionInstructions())
-            add(JcRawThrowInst(owner, catchVar))
+            val exceptionsHandler = buildList {
+                add(JcRawLabelInst(owner, handlerLabel))
+                add(JcRawCatchInst(owner, catchVar, JcRawLabelRef(handlerLabel), listOf(finallyBlockEntry)))
+                addAll(getOnExitFunctionInstructions())
+                add(JcRawThrowInst(owner, catchVar))
+            }
+
+            instrumentedInstructionsList.insertAfter(instrumentedInstructionsList.last(), exceptionsHandler)
         }
-
-        instrumentedInstructionsList.insertAfter(instrumentedInstructionsList.last(), exceptionsHandler)
     }
 
     private inner class OperandsProcessor(private val encodedInst: Long) {

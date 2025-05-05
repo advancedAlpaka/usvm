@@ -4,6 +4,7 @@ import org.jacodb.api.jvm.JcClasspath
 import org.jacodb.api.jvm.JcMethod
 import org.jacodb.api.jvm.cfg.*
 import org.jacodb.api.jvm.ext.isEnum
+import org.jacodb.impl.cfg.JcMutableInstListImpl
 import org.jacodb.impl.cfg.MethodNodeBuilder
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.MethodNode
@@ -78,15 +79,16 @@ open class JcRuntimeTraceInstrumenter(
     open fun atMethodStart(jcMethod: JcMethod, instrumentedInstructionsList: JcMutableInstList<JcRawInst>) {}
 
     private fun instrumentMethod(jcMethod: JcMethod): MethodNode {
-        val rawJcInstructionsList = jcMethod.rawInstList.filter { it !is JcRawLabelInst && it !is JcRawLineNumberInst }
+        val (changedMethod, instructions) = SignaturesChanger().instrumentMethod(jcMethod)
+        val rawJcInstructionsList = instructions.filter { it !is JcRawLabelInst && it !is JcRawLineNumberInst }
         val jcInstructionsList = jcMethod.instList
-        val instrumentedJcInstructionsList = jcMethod.rawInstList.toMutableList()
-        atMethodStart(jcMethod, instrumentedJcInstructionsList)
+        val instrumentedJcInstructionsList = JcMutableInstListImpl(instructions)
+        atMethodStart(changedMethod, instrumentedJcInstructionsList)
         for (i in jcInstructionsList.indices) {
             val encodedInst = tracer.encode(jcInstructionsList[i])
             processInstruction(encodedInst, rawJcInstructionsList[i], instrumentedJcInstructionsList)
         }
-        return MethodNodeBuilder(jcMethod, instrumentedJcInstructionsList).build()
+        return MethodNodeBuilder(changedMethod, instrumentedJcInstructionsList).build()
     }
 
     override fun instrumentClass(classNode: ClassNode): ClassNode {
@@ -97,7 +99,8 @@ open class JcRuntimeTraceInstrumenter(
             jcClass.declaredMethods.filterNot { it.isClassInitializer || it.name == "values" || it.name == "valueOf" }
         } else {
             jcClass.declaredMethods.filterNot { it.isClassInitializer }
-        }.filterNot { if (instrumentConstructors) it.isDefaultEmptyConstructor() else it.isConstructor }
+        }.filterNot { it.instList.size == 0 }
+            .filterNot { if (instrumentConstructors) it.isDefaultEmptyConstructor() else it.isConstructor }
         //Copy of clinit method to be able to rollback statics between executions!
         //We are not able to call <clinit> method directly with reflection
         asmMethods.find { it.name == "<clinit>" }?.let { clinitNode ->

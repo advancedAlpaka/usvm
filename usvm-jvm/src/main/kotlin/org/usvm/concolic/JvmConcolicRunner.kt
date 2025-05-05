@@ -48,7 +48,9 @@ class JvmConcolicRunner(jarPaths: List<String>, private val method: JcMethod) : 
             applicationGraph = JcApplicationGraph(classpath)
             concreteExecutor = UTestConcreteExecutor(
                 JcRuntimeConcolicInstrumenterFactory::class,
-                jarPaths + InstrumentationModuleConstants.pathToUsvmCollectorsJar,
+                jarPaths +
+                        InstrumentationModuleConstants.pathToUsvmCollectorsJar +
+                        InstrumentationModuleConstants.pathToPatchedStdlib,
                 classpath,
                 InstrumentationModuleConstants.testExecutionTimeout
             )
@@ -193,6 +195,17 @@ class JvmConcolicRunner(jarPaths: List<String>, private val method: JcMethod) : 
                 classpath.short -> UTestShortExpression(0, jcType)
                 classpath.byte -> UTestByteExpression(0, jcType)
                 classpath.char -> UTestCharExpression('0', jcType)
+
+                classpath.arrayTypeOf(classpath.int) -> UTestCreateArrayExpression(classpath.int, UTestIntExpression(1, jcType))
+                classpath.arrayTypeOf(classpath.long) -> UTestCreateArrayExpression(classpath.long, UTestIntExpression(1, jcType))
+                classpath.arrayTypeOf(classpath.float) -> UTestCreateArrayExpression(classpath.float, UTestIntExpression(1, jcType))
+                classpath.arrayTypeOf(classpath.double) -> UTestCreateArrayExpression(classpath.double, UTestIntExpression(1, jcType))
+                classpath.arrayTypeOf(classpath.short) -> UTestCreateArrayExpression(classpath.short, UTestIntExpression(1, jcType))
+                classpath.arrayTypeOf(classpath.byte) -> UTestCreateArrayExpression(classpath.byte, UTestIntExpression(1, jcType))
+                classpath.arrayTypeOf(classpath.char) -> UTestCreateArrayExpression(classpath.char, UTestIntExpression(1, jcType))
+
+                classpath.arrayTypeOf(classpath.objectType) -> UTestCreateArrayExpression(classpath.objectType, UTestIntExpression(1, jcType))
+
                 else -> UTestAllocateMemoryCall(jcType.toJcClass()!!)
             }
         }

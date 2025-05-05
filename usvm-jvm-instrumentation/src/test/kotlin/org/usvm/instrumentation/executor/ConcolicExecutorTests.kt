@@ -1,6 +1,6 @@
 package org.usvm.instrumentation.executor
 
-import example.ConcolicTests
+import example.*
 import kotlinx.coroutines.runBlocking
 import mu.KotlinLogging
 import org.jacodb.api.jvm.JcClasspath
@@ -117,30 +117,12 @@ class ConcolicExecutorTests {
                     append(" => ")
                     when (val result = it.result) {
                         is UTestExecutionSuccessResult -> {
-                            when (val value = result.result) {
-                                is UTestConstantDescriptor.Int -> append(value.value)
-                                is UTestArrayDescriptor -> TODO()
-                                is UTestClassDescriptor -> TODO()
-                                is UTestConstantDescriptor.Boolean -> TODO()
-                                is UTestConstantDescriptor.Byte -> TODO()
-                                is UTestConstantDescriptor.Char -> TODO()
-                                is UTestConstantDescriptor.Double -> TODO()
-                                is UTestConstantDescriptor.Float -> TODO()
-                                is UTestConstantDescriptor.Long -> TODO()
-                                is UTestConstantDescriptor.Null -> TODO()
-                                is UTestConstantDescriptor.Short -> TODO()
-                                is UTestConstantDescriptor.String -> TODO()
-                                is UTestCyclicReferenceDescriptor -> TODO()
-                                is UTestEnumValueDescriptor -> TODO()
-                                is UTestExceptionDescriptor -> TODO()
-                                is UTestObjectDescriptor -> TODO()
-                                null -> TODO()
-                            }
+                            append(stringify(result.result))
                         }
                         is UTestExecutionExceptionResult -> append("Exception: ${result.cause.message}")
                         is UTestExecutionFailedResult -> TODO()
                         is UTestExecutionInitFailedResult -> TODO()
-                        is UTestExecutionTimedOutResult -> TODO()
+                        is UTestExecutionTimedOutResult -> append("timeout")
                     }
                     append(System.lineSeparator())
                 }
@@ -177,11 +159,35 @@ class ConcolicExecutorTests {
             is UTestLongExpression -> TODO()
             is UTestShortExpression -> TODO()
             is UTestStringExpression -> TODO()
-            is UTestCreateArrayExpression -> TODO()
+            is UTestCreateArrayExpression -> "[${testExpr.elementType.typeName}:${(testExpr.size as UTestIntExpression).value}]"
             is UTestGetFieldExpression -> TODO()
             is UTestGetStaticFieldExpression -> TODO()
             is UTestGlobalMock -> TODO()
             is UTestMockObject -> TODO()
+        }
+    }
+
+    private fun stringify(valueDescriptor: UTestValueDescriptor?): String {
+        return when (valueDescriptor) {
+            is UTestConstantDescriptor.Int -> valueDescriptor.value.toString()
+            is UTestArrayDescriptor -> "[${valueDescriptor.value.joinToString { stringify(it) }}]"
+            is UTestClassDescriptor -> TODO()
+            is UTestConstantDescriptor.Boolean -> valueDescriptor.value.toString()
+            is UTestConstantDescriptor.Byte -> valueDescriptor.value.toString()
+            is UTestConstantDescriptor.Char -> valueDescriptor.value.toString()
+            is UTestConstantDescriptor.Double -> valueDescriptor.value.toString()
+            is UTestConstantDescriptor.Float -> valueDescriptor.value.toString()
+            is UTestConstantDescriptor.Long -> valueDescriptor.value.toString()
+            is UTestConstantDescriptor.Null -> "null"
+            is UTestConstantDescriptor.Short -> valueDescriptor.value.toString()
+            is UTestConstantDescriptor.String -> valueDescriptor.value
+            is UTestCyclicReferenceDescriptor -> TODO()
+            is UTestEnumValueDescriptor -> TODO()
+            is UTestExceptionDescriptor -> TODO()
+            is UTestObjectDescriptor -> "${valueDescriptor.type.typeName}{${valueDescriptor.fields.toList().joinToString { 
+                "${it.first.name} = ${stringify(it.second)}" 
+            }}}"
+            null -> "null"
         }
     }
 }

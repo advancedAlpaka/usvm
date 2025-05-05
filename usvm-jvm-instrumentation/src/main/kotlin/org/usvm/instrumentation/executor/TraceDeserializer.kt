@@ -4,6 +4,7 @@ import org.jacodb.api.jvm.JcClassOrInterface
 import org.jacodb.api.jvm.JcClasspath
 import org.jacodb.api.jvm.cfg.JcInst
 import org.usvm.instrumentation.generated.models.ClassToId
+import org.usvm.instrumentation.instrumentation.SignaturesChanger
 import kotlin.math.pow
 
 class TraceDeserializer(private val jcClasspath: JcClasspath) {
@@ -22,12 +23,17 @@ class TraceDeserializer(private val jcClasspath: JcClasspath) {
                     deserializedClassesCache.getOrPut(classId) {
                         val className = coveredClasses.find { it.classId == classId }
                             ?: error("Deserialization error")
-                        jcClasspath.findClassOrNull(className.className) ?: error("Deserialization error")
+                        jcClasspath.findClassOrNull(changeSignature(className.className)) ?: error("Deserialization error")
                     }
-                val jcMethod = jcClass.declaredMethods.sortedBy { it.description }[methodId.toInt()]
+                val jcMethod = jcClass.declaredMethods[methodId.toInt()]
                 jcMethod.instList
                     .find { it.location.index == instructionId }
                     ?: error("Deserialization error")
             }
         }
+
+    private fun changeSignature(signature: String): String {
+        val signatureChanger = SignaturesChanger()
+        return signatureChanger.changeSignature(signature, true)!!
+    }
 }

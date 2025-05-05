@@ -68,7 +68,6 @@ abstract class Tracer<T : Trace> {
     private fun encodeMethod(jcClass: JcClassOrInterface, jcMethod: JcMethod): EncodedMethod {
         val encodedClass = encodeClass(jcClass)
         val methodIndex = jcClass.declaredMethods
-            .sortedBy { it.description }
             .indexOf(jcMethod)
             .also { if (it == -1) error("Encoding error") }
         return encodedClass.encodedMethods.getOrPut(jcMethod) { EncodedMethod(methodIndex.toLong()) }

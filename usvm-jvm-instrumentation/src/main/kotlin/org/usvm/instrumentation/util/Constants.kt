@@ -35,4 +35,6 @@ object InstrumentationModuleConstants {
     val pathToJava: String
         get() = System.getenv()["JAVA_HOME"] ?: System.getProperty("java.home")
 
+    val pathToPatchedStdlib: String
+        get() = this.javaClass.classLoader.getResource("java.patched.base.jar")!!.toString()
 }
