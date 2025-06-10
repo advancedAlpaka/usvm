@@ -21,6 +21,7 @@ class WorkerClassLoader(
     private val traceCollectorClassLoader: ClassLoader,
     private val traceCollectorClassName: String,
     private val mockCollectorClassName: String,
+    private val concolicCollectorClassName: String,
     val jcClasspath: JcClasspath
 ) : SecureClassLoader(null) {
 
@@ -85,6 +86,7 @@ class WorkerClassLoader(
     override fun loadClass(name: String): Class<*> {
         if (name == traceCollectorClassName) return traceCollectorClassLoader.loadClass(name)
         if (name == mockCollectorClassName) return traceCollectorClassLoader.loadClass(name)
+        if (name == concolicCollectorClassName) return traceCollectorClassLoader.loadClass(name)
         return try {
             super.loadClass(name)
         } catch (e: Throwable) {

@@ -18,6 +18,7 @@ import org.usvm.instrumentation.serializer.UTestValueDescriptorSerializer.Compan
 import org.usvm.instrumentation.testcase.UTest
 import org.usvm.instrumentation.testcase.api.*
 import org.usvm.instrumentation.testcase.descriptor.UTestExceptionDescriptor
+import org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
@@ -139,11 +140,13 @@ class RdProcessRunner(
         return when (executionResult.type) {
             ExecutionResultType.UTestExecutionInitFailedResult -> UTestExecutionInitFailedResult(
                 cause = executionResult.cause as? UTestExceptionDescriptor ?: error("deserialization failed"),
-                trace = executionResult.trace?.let { deserializeTrace(it, coveredClasses) }
+                trace = executionResult.trace?.let { deserializeTrace(it, coveredClasses) },
+                concreteValues = executionResult.concreteValues?.let { deserializeConcreteValues(it) }
             )
 
             ExecutionResultType.UTestExecutionSuccessResult -> UTestExecutionSuccessResult(
                 trace = executionResult.trace?.let { deserializeTrace(it, coveredClasses) },
+                concreteValues = executionResult.concreteValues?.let { deserializeConcreteValues(it) },
                 result = executionResult.result,
                 initialState = executionResult.initialState?.let { deserializeExecutionState(it) }
                     ?: error("deserialization failed"),
@@ -153,9 +156,8 @@ class RdProcessRunner(
 
             ExecutionResultType.UTestExecutionExceptionResult -> UTestExecutionExceptionResult(
                 cause = executionResult.cause as? UTestExceptionDescriptor ?: error("deserialization failed"),
-                trace = executionResult.trace?.let {
-                    deserializeTrace(it, coveredClasses)
-                },
+                trace = executionResult.trace?.let { deserializeTrace(it, coveredClasses) },
+                concreteValues = executionResult.concreteValues?.let { deserializeConcreteValues(it) },
                 initialState = executionResult.initialState?.let { deserializeExecutionState(it) }
                     ?: error("deserialization failed"),
                 resultState = executionResult.resultState?.let { deserializeExecutionState(it) }
@@ -173,7 +175,9 @@ class RdProcessRunner(
     }
 
     private fun deserializeExecutionState(state: ExecutionStateSerialized): UTestExecutionState {
-        val statics = state.statics?.associate {
+        val statics = state.statics
+            ?.filter { !it.fieldName.startsWith("org.usvm.instrumentation") }
+            ?.associate {
             val jcField = jcClasspath.findFieldByFullNameOrNull(it.fieldName) ?: error("deserialization failed")
             val jcFieldDescriptor = it.fieldDescriptor
             jcField to jcFieldDescriptor
@@ -183,6 +187,9 @@ class RdProcessRunner(
 
     private fun deserializeTrace(trace: List<Long>, coveredClasses: List<ClassToId>): List<JcInst> =
         traceDeserializer.deserializeTrace(trace, coveredClasses)
+
+    private fun deserializeConcreteValues(concreteValues: List<List<IndexToValue>>) =
+        concreteValues.map { it.associate { (index, value) -> index to value } }
 
     fun destroy() {
         lifetime.terminate()

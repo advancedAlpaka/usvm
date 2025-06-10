@@ -64,6 +64,12 @@ dependencies {
     implementation("commons-cli:commons-cli:1.5.0")
 
     rdgenModelsCompileClasspath(Libs.rd_gen)
+
+    implementation("com.jetbrains.rd:rd-gen:${Versions.rd}")
+
+    testImplementation(project(":usvm-core"))
+    testImplementation(project(":usvm-jvm"))
+    testImplementation(project(":usvm-util"))
 }
 
 tasks.withType<KotlinCompile> {

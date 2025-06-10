@@ -19,7 +19,26 @@ sealed class UTestMock(
     override val type: JcType,
     open val fields: Map<JcField, UTestExpression>,
     open val methods: Map<JcMethod, List<UTestExpression>>
-): UTestExpression
+): UTestExpression {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestMock) return false
+
+        if (type != other.type) return false
+        if (fields != other.fields) return false
+        if (methods != other.methods) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = type.hashCode()
+        result = 31 * result + fields.hashCode()
+        result = 31 * result + methods.hashCode()
+        return result
+    }
+}
+
 /**
  * Mock for specific object
  */
@@ -51,6 +70,24 @@ class UTestMethodCall(
     override val args: List<UTestExpression>
 ) : UTestCall {
     override val type: JcType? = method.enclosingClass.classpath.findTypeOrNull(method.returnType)
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestMethodCall) return false
+
+        if (instance != other.instance) return false
+        if (method != other.method) return false
+        if (args != other.args) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = instance.hashCode()
+        result = 31 * result + method.hashCode()
+        result = 31 * result + args.hashCode()
+        return result
+    }
 }
 
 class UTestStaticMethodCall(
@@ -59,6 +96,22 @@ class UTestStaticMethodCall(
 ) : UTestCall {
     override val instance: UTestExpression? = null
     override val type: JcType? = method.enclosingClass.classpath.findTypeOrNull(method.returnType)
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestStaticMethodCall) return false
+
+        if (method != other.method) return false
+        if (args != other.args) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = method.hashCode()
+        result = 31 * result + args.hashCode()
+        return result
+    }
 }
 
 class UTestConstructorCall(
@@ -67,6 +120,22 @@ class UTestConstructorCall(
 ) : UTestCall {
     override val instance: UTestExpression? = null
     override val type: JcType = method.enclosingClass.toType()
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestConstructorCall) return false
+
+        if (method != other.method) return false
+        if (args != other.args) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = method.hashCode()
+        result = 31 * result + args.hashCode()
+        return result
+    }
 }
 
 class UTestAllocateMemoryCall(
@@ -76,6 +145,19 @@ class UTestAllocateMemoryCall(
     override val method: JcMethod? = null
     override val args: List<UTestExpression> = listOf()
     override val type: JcType = clazz.toType()
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestAllocateMemoryCall) return false
+
+        if (clazz != other.clazz) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        return clazz.hashCode()
+    }
 }
 
 sealed interface UTestStatement : UTestInst
@@ -84,12 +166,46 @@ class UTestSetFieldStatement(
     val instance: UTestExpression,
     val field: JcField,
     val value: UTestExpression
-) : UTestStatement
+) : UTestStatement {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestSetFieldStatement) return false
+
+        if (instance != other.instance) return false
+        if (field.signature != other.field.signature) return false
+        if (value != other.value) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = instance.hashCode()
+        result = 31 * result + field.signature.hashCode()
+        result = 31 * result + value.hashCode()
+        return result
+    }
+}
 
 class UTestSetStaticFieldStatement(
     val field: JcField,
     val value: UTestExpression
-) : UTestStatement
+) : UTestStatement {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestSetStaticFieldStatement) return false
+
+        if (field.signature != other.field.signature) return false
+        if (value != other.value) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = field.signature.hashCode()
+        result = 31 * result + value.hashCode()
+        return result
+    }
+}
 
 
 class UTestBinaryConditionExpression(
@@ -107,6 +223,28 @@ class UTestBinaryConditionExpression(
 
     //Probably add functionality in jacodb?
     override val type: JcType? = trueBranch.type
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestBinaryConditionExpression) return false
+
+        if (conditionType != other.conditionType) return false
+        if (lhv != other.lhv) return false
+        if (rhv != other.rhv) return false
+        if (trueBranch != other.trueBranch) return false
+        if (elseBranch != other.elseBranch) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = conditionType.hashCode()
+        result = 31 * result + lhv.hashCode()
+        result = 31 * result + rhv.hashCode()
+        result = 31 * result + trueBranch.hashCode()
+        result = 31 * result + elseBranch.hashCode()
+        return result
+    }
 }
 
 class UTestBinaryConditionStatement(
@@ -115,23 +253,88 @@ class UTestBinaryConditionStatement(
     val rhv: UTestExpression,
     val trueBranch: List<UTestStatement>,
     val elseBranch: List<UTestStatement>
-) : UTestStatement
+) : UTestStatement {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestBinaryConditionStatement) return false
+
+        if (conditionType != other.conditionType) return false
+        if (lhv != other.lhv) return false
+        if (rhv != other.rhv) return false
+        if (trueBranch != other.trueBranch) return false
+        if (elseBranch != other.elseBranch) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = conditionType.hashCode()
+        result = 31 * result + lhv.hashCode()
+        result = 31 * result + rhv.hashCode()
+        result = 31 * result + trueBranch.hashCode()
+        result = 31 * result + elseBranch.hashCode()
+        return result
+    }
+}
 
 class UTestArithmeticExpression(
     val operationType: ArithmeticOperationType,
     val lhv: UTestExpression,
     val rhv: UTestExpression,
     override val type: JcType
-) : UTestExpression
+) : UTestExpression {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestArithmeticExpression) return false
+
+        if (operationType != other.operationType) return false
+        if (lhv != other.lhv) return false
+        if (rhv != other.rhv) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = operationType.hashCode()
+        result = 31 * result + lhv.hashCode()
+        result = 31 * result + rhv.hashCode()
+        return result
+    }
+}
 
 class UTestGetStaticFieldExpression(
     val field: JcField
 ) : UTestExpression {
     override val type: JcType? = field.enclosingClass.classpath.findTypeOrNull(field.type)
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestGetStaticFieldExpression) return false
+
+        if (field.signature != other.field.signature) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        return field.signature.hashCode()
+    }
 }
 
 sealed class UTestConstExpression<T> : UTestExpression {
     abstract val value: T
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestConstExpression<*>) return false
+
+        if (value != other.value) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        return value?.hashCode() ?: 0
+    }
 }
 
 class UTestBooleanExpression(
@@ -190,12 +393,41 @@ class UTestGetFieldExpression(
     val field: JcField
 ) : UTestExpression {
     override val type: JcType? = field.enclosingClass.classpath.findTypeOrNull(field.type)
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestGetFieldExpression) return false
+
+        if (instance != other.instance) return false
+        if (field.signature != other.field.signature) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = instance.hashCode()
+        result = 31 * result + field.signature.hashCode()
+        return result
+    }
 }
 
 class UTestArrayLengthExpression(
     val arrayInstance: UTestExpression
 ) : UTestExpression {
     override val type: JcType? = arrayInstance.type?.classpath?.int
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestArrayLengthExpression) return false
+
+        if (arrayInstance != other.arrayInstance) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        return arrayInstance.hashCode()
+    }
 }
 
 class UTestArrayGetExpression(
@@ -203,29 +435,108 @@ class UTestArrayGetExpression(
     val index: UTestExpression
 ) : UTestExpression {
     override val type: JcType? = (arrayInstance.type as? JcArrayType)?.elementType
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestArrayGetExpression) return false
+
+        if (arrayInstance != other.arrayInstance) return false
+        if (index != other.index) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = arrayInstance.hashCode()
+        result = 31 * result + index.hashCode()
+        return result
+    }
 }
 
 class UTestArraySetStatement(
     val arrayInstance: UTestExpression,
     val index: UTestExpression,
     val setValueExpression: UTestExpression
-) : UTestStatement
+) : UTestStatement {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestArraySetStatement) return false
+
+        if (arrayInstance != other.arrayInstance) return false
+        if (index != other.index) return false
+        if (setValueExpression != other.setValueExpression) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = arrayInstance.hashCode()
+        result = 31 * result + index.hashCode()
+        result = 31 * result + setValueExpression.hashCode()
+        return result
+    }
+}
 
 class UTestCreateArrayExpression(
     val elementType: JcType,
     val size: UTestExpression
 ) : UTestExpression {
     override val type: JcType = JcArrayTypeImpl(elementType)
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestCreateArrayExpression) return false
+
+        if (elementType != other.elementType) return false
+        if (size != other.size) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = elementType.hashCode()
+        result = 31 * result + size.hashCode()
+        return result
+    }
 }
 
 class UTestCastExpression(
     val expr: UTestExpression,
     override val type: JcType
-) : UTestExpression
+) : UTestExpression {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestCastExpression) return false
+
+        if (expr != other.expr) return false
+        if (type != other.type) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = expr.hashCode()
+        result = 31 * result + type.hashCode()
+        return result
+    }
+}
 
 class UTestClassExpression(
     override val type: JcType
-): UTestExpression
+): UTestExpression {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTestClassExpression) return false
+
+        if (type != other.type) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        return type.hashCode()
+    }
+}
 
 
 enum class ConditionType {

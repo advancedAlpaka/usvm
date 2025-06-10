@@ -5,6 +5,7 @@ import org.jacodb.api.jvm.*
 import org.jacodb.api.jvm.ext.findClass
 import org.jacodb.api.jvm.ext.findFieldOrNull
 import org.jacodb.api.jvm.ext.findMethodOrNull
+import org.usvm.instrumentation.instrumentation.SignaturesChanger
 import org.usvm.instrumentation.util.toStringType
 
 fun AbstractBuffer.writeJcMethod(jcMethod: JcMethod) = with(jcMethod) {
@@ -28,25 +29,25 @@ fun AbstractBuffer.writeJcType(jcType: JcType?) {
 }
 
 fun AbstractBuffer.readJcMethod(jcClasspath: JcClasspath): JcMethod {
-    val className = readString()
+    val className = changeSignature(readString())
     val methodName = readString()
     val description = readString()
     return jcClasspath.findClass(className).findMethodOrNull(methodName, description)!!
 }
 
 fun AbstractBuffer.readJcClass(jcClasspath: JcClasspath): JcClassOrInterface {
-    val className = readString()
+    val className = changeSignature(readString())
     return jcClasspath.findClass(className)
 }
 
 fun AbstractBuffer.readJcField(jcClasspath: JcClasspath): JcField {
-    val className = readString()
+    val className = changeSignature(readString())
     val fieldName = readString()
     return jcClasspath.findClass(className).findFieldOrNull(fieldName)!!
 }
 
 fun AbstractBuffer.readJcType(jcClasspath: JcClasspath): JcType? {
-    var typeName = readString()
+    var typeName = changeSignature(readString())
     if (typeName == "type_is_null") return null
     jcClasspath.findTypeOrNull(typeName)?.let { return it }
     //We need this because of jacodb peculiarity with typenames...
@@ -55,4 +56,9 @@ fun AbstractBuffer.readJcType(jcClasspath: JcClasspath): JcType? {
         jcClasspath.findTypeOrNull(typeName)?.let { return it }
     }
     return null
+}
+
+private fun changeSignature(signature: String): String {
+    val signatureChanger = SignaturesChanger()
+    return signatureChanger.changeSignature(signature, true)!!
 }

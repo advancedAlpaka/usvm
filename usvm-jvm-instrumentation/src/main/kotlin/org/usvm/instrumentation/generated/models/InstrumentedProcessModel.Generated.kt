@@ -31,6 +31,7 @@ class InstrumentedProcessModel private constructor(
             serializers.register(ExecutionStateSerialized)
             serializers.register(SerializedStaticField)
             serializers.register(ClassToId)
+            serializers.register(IndexToValue)
             serializers.register(ExecutionResult)
             serializers.register(ExecutionResultType.marshaller)
         }
@@ -53,7 +54,7 @@ class InstrumentedProcessModel private constructor(
         }
         
         
-        const val serializationHash = 1434578686845984847L
+        const val serializationHash = -967535569072496558L
         
     }
     override val serializersOwner: ISerializersOwner get() = InstrumentedProcessModel
@@ -232,12 +233,13 @@ data class ExecuteParams (
 
 
 /**
- * #### Generated from [InstrumentedProcessModel.kt:63]
+ * #### Generated from [InstrumentedProcessModel.kt:68]
  */
 data class ExecutionResult (
     val type: ExecutionResultType,
     val classes: List<ClassToId>?,
     val trace: List<Long>?,
+    val concreteValues: List<List<IndexToValue>>?,
     val cause: org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor?,
     val result: org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor?,
     val initialState: ExecutionStateSerialized?,
@@ -253,17 +255,19 @@ data class ExecutionResult (
             val type = buffer.readEnum<ExecutionResultType>()
             val classes = buffer.readNullable { buffer.readList { ClassToId.read(ctx, buffer) } }
             val trace = buffer.readNullable { buffer.readList { buffer.readLong() } }
+            val concreteValues = buffer.readNullable { buffer.readList { buffer.readList { IndexToValue.read(ctx, buffer) } } }
             val cause = buffer.readNullable { (ctx.serializers.get(org.usvm.instrumentation.serializer.UTestValueDescriptorSerializer.marshallerId)!! as IMarshaller<org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor>).read(ctx, buffer) }
             val result = buffer.readNullable { (ctx.serializers.get(org.usvm.instrumentation.serializer.UTestValueDescriptorSerializer.marshallerId)!! as IMarshaller<org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor>).read(ctx, buffer) }
             val initialState = buffer.readNullable { ExecutionStateSerialized.read(ctx, buffer) }
             val resultState = buffer.readNullable { ExecutionStateSerialized.read(ctx, buffer) }
-            return ExecutionResult(type, classes, trace, cause, result, initialState, resultState)
+            return ExecutionResult(type, classes, trace, concreteValues, cause, result, initialState, resultState)
         }
         
         override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: ExecutionResult)  {
             buffer.writeEnum(value.type)
             buffer.writeNullable(value.classes) { buffer.writeList(it) { v -> ClassToId.write(ctx, buffer, v) } }
             buffer.writeNullable(value.trace) { buffer.writeList(it) { v -> buffer.writeLong(v) } }
+            buffer.writeNullable(value.concreteValues) { buffer.writeList(it) { v -> buffer.writeList(v) { v -> IndexToValue.write(ctx, buffer, v) } } }
             buffer.writeNullable(value.cause) { (ctx.serializers.get(org.usvm.instrumentation.serializer.UTestValueDescriptorSerializer.marshallerId)!! as IMarshaller<org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor>).write(ctx,buffer, it) }
             buffer.writeNullable(value.result) { (ctx.serializers.get(org.usvm.instrumentation.serializer.UTestValueDescriptorSerializer.marshallerId)!! as IMarshaller<org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor>).write(ctx,buffer, it) }
             buffer.writeNullable(value.initialState) { ExecutionStateSerialized.write(ctx, buffer, it) }
@@ -286,6 +290,7 @@ data class ExecutionResult (
         if (type != other.type) return false
         if (classes != other.classes) return false
         if (trace != other.trace) return false
+        if (concreteValues != other.concreteValues) return false
         if (cause != other.cause) return false
         if (result != other.result) return false
         if (initialState != other.initialState) return false
@@ -299,6 +304,7 @@ data class ExecutionResult (
         __r = __r*31 + type.hashCode()
         __r = __r*31 + if (classes != null) classes.hashCode() else 0
         __r = __r*31 + if (trace != null) trace.hashCode() else 0
+        __r = __r*31 + if (concreteValues != null) concreteValues.hashCode() else 0
         __r = __r*31 + if (cause != null) cause.hashCode() else 0
         __r = __r*31 + if (result != null) result.hashCode() else 0
         __r = __r*31 + if (initialState != null) initialState.hashCode() else 0
@@ -312,6 +318,7 @@ data class ExecutionResult (
             print("type = "); type.print(printer); println()
             print("classes = "); classes.print(printer); println()
             print("trace = "); trace.print(printer); println()
+            print("concreteValues = "); concreteValues.print(printer); println()
             print("cause = "); cause.print(printer); println()
             print("result = "); result.print(printer); println()
             print("initialState = "); initialState.print(printer); println()
@@ -325,7 +332,7 @@ data class ExecutionResult (
 
 
 /**
- * #### Generated from [InstrumentedProcessModel.kt:64]
+ * #### Generated from [InstrumentedProcessModel.kt:69]
  */
 enum class ExecutionResultType {
     UTestExecutionInitFailedResult, 
@@ -402,6 +409,69 @@ data class ExecutionStateSerialized (
             print("instanceDescriptor = "); instanceDescriptor.print(printer); println()
             print("argsDescriptors = "); argsDescriptors.print(printer); println()
             print("statics = "); statics.print(printer); println()
+        }
+        printer.print(")")
+    }
+    //deepClone
+    //contexts
+}
+
+
+/**
+ * #### Generated from [InstrumentedProcessModel.kt:63]
+ */
+data class IndexToValue (
+    val index: Int,
+    val concreteValue: org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor
+) : IPrintable {
+    //companion
+    
+    companion object : IMarshaller<IndexToValue> {
+        override val _type: KClass<IndexToValue> = IndexToValue::class
+        
+        @Suppress("UNCHECKED_CAST")
+        override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): IndexToValue  {
+            val index = buffer.readInt()
+            val concreteValue = (ctx.serializers.get(org.usvm.instrumentation.serializer.UTestValueDescriptorSerializer.marshallerId)!! as IMarshaller<org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor>).read(ctx, buffer)
+            return IndexToValue(index, concreteValue)
+        }
+        
+        override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: IndexToValue)  {
+            buffer.writeInt(value.index)
+            (ctx.serializers.get(org.usvm.instrumentation.serializer.UTestValueDescriptorSerializer.marshallerId)!! as IMarshaller<org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor>).write(ctx,buffer, value.concreteValue)
+        }
+        
+        
+    }
+    //fields
+    //methods
+    //initializer
+    //secondary constructor
+    //equals trait
+    override fun equals(other: Any?): Boolean  {
+        if (this === other) return true
+        if (other == null || other::class != this::class) return false
+        
+        other as IndexToValue
+        
+        if (index != other.index) return false
+        if (concreteValue != other.concreteValue) return false
+        
+        return true
+    }
+    //hash code trait
+    override fun hashCode(): Int  {
+        var __r = 0
+        __r = __r*31 + index.hashCode()
+        __r = __r*31 + concreteValue.hashCode()
+        return __r
+    }
+    //pretty print
+    override fun print(printer: PrettyPrinter)  {
+        printer.println("IndexToValue (")
+        printer.indent {
+            print("index = "); index.print(printer); println()
+            print("concreteValue = "); concreteValue.print(printer); println()
         }
         printer.print(")")
     }

@@ -1,17 +1,20 @@
 package org.usvm.instrumentation.instrumentation
 
 import org.jacodb.api.jvm.JcClasspath
+import org.jacodb.api.jvm.PredefinedPrimitives
+import org.jacodb.api.jvm.TypeName
 import org.jacodb.api.jvm.cfg.JcRawCallInst
+import org.jacodb.api.jvm.cfg.JcRawFieldRef
 import org.jacodb.api.jvm.cfg.JcRawStaticCallExpr
 import org.jacodb.api.jvm.cfg.JcRawValue
-import org.jacodb.api.jvm.ext.long
-import org.jacodb.api.jvm.ext.objectType
+import org.jacodb.api.jvm.ext.*
 import org.jacodb.impl.cfg.JcRawLong
 import org.jacodb.impl.features.classpaths.virtual.JcVirtualClassImpl
 import org.jacodb.impl.features.classpaths.virtual.JcVirtualMethod
 import org.jacodb.impl.features.classpaths.virtual.JcVirtualMethodImpl
 import org.jacodb.impl.features.classpaths.virtual.JcVirtualParameter
 import org.jacodb.impl.types.TypeNameImpl
+import org.usvm.instrumentation.util.get
 import org.usvm.instrumentation.util.getTypename
 import org.usvm.instrumentation.util.typename
 import java.lang.reflect.Method
@@ -74,6 +77,46 @@ class TraceHelper(
         )
     }
 
+    fun createResizeFlagsStacksMethodCall() =
+        createStaticCall("resizeFlagsStacks")
+
+    fun createResizeSymbolicInstructionsTraceMethodCall() =
+        createStaticCall("resizeSymbolicInstructionsTrace")
+
+    fun createResizeStaticFieldsFlagsMethodCall() =
+        createStaticCall("resizeStaticFieldsFlags")
+
+    fun createBoxValueCall(value: JcRawValue): JcRawStaticCallExpr? {
+        val (javaClass, typeName) = when (value.typeName.typeName) {
+            PredefinedPrimitives.Byte -> java.lang.Byte::class.java to jcClasspath.byte.getTypename()
+
+            PredefinedPrimitives.Char -> java.lang.Character::class.java to jcClasspath.char.getTypename()
+
+            PredefinedPrimitives.Short -> java.lang.Short::class.java to jcClasspath.short.getTypename()
+
+            PredefinedPrimitives.Int -> java.lang.Integer::class.java to jcClasspath.int.getTypename()
+
+            PredefinedPrimitives.Long -> java.lang.Long::class.java to jcClasspath.long.getTypename()
+
+            PredefinedPrimitives.Float -> java.lang.Float::class.java to jcClasspath.float.getTypename()
+
+            PredefinedPrimitives.Double -> java.lang.Double::class.java to jcClasspath.double.getTypename()
+
+            PredefinedPrimitives.Boolean -> java.lang.Boolean::class.java to jcClasspath.boolean.getTypename()
+
+            else -> return null
+        }
+
+        val javaClassTypename = jcClasspath[javaClass]!!.typename
+        return JcRawStaticCallExpr(
+            javaClassTypename,
+            "valueOf",
+            listOf(typeName),
+            javaClassTypename,
+            listOf(value)
+        )
+    }
+
     fun createStaticExprWithLongArg(arg: Long, jcTraceMethod: JcVirtualMethod): JcRawStaticCallExpr {
         val argAsJcConst = JcRawLong(arg)
         return JcRawStaticCallExpr(
@@ -85,5 +128,20 @@ class TraceHelper(
         )
     }
 
+    fun createStaticFieldRef(fieldName: String, fieldType: TypeName): JcRawFieldRef {
+        return JcRawFieldRef(null, jcVirtualGlobalObjectClass.typename, fieldName, fieldType)
+    }
 
+    private fun createStaticCall(methodName: String, vararg args: JcRawValue): JcRawCallInst {
+        val method = jcVirtualGlobalObjectClass.declaredMethods.find { it.name == methodName }!!
+        val callExpr = JcRawStaticCallExpr(
+            declaringClass = jcVirtualGlobalObjectClass.typename,
+            methodName = method.name,
+            argumentTypes = method.parameters.map { it.type },
+            returnType = method.returnType,
+            args = args.toList()
+        )
+
+        return JcRawCallInst(method, callExpr)
+    }
 }

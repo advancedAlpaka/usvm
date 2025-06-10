@@ -20,6 +20,8 @@ object InstrumentationModuleConstants {
     val maxDepthOfDescriptorConstruction = 5
     //Number of stacktrace elements for exception construction
     val maxStackTraceElements = 10
+    // Enable concolic mode instrumentation
+    val concolicMode = true
 
     const val nameForExistingButNullString = "USVM_GENERATED_NULL_STRING"
 
@@ -33,4 +35,6 @@ object InstrumentationModuleConstants {
     val pathToJava: String
         get() = System.getenv()["JAVA_HOME"] ?: System.getProperty("java.home")
 
+    val pathToPatchedStdlib: String
+        get() = this.javaClass.classLoader.getResource("java.patched.base.jar")!!.toString()
 }

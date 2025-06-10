@@ -56,7 +56,8 @@ class InstrumentationProcessRunner(
     private fun createWorkerProcessArgs(rdPort: Int): List<String> =
         listOf("-cp", testingProjectClasspath) +
         listOf("-t", "${InstrumentationModuleConstants.concreteExecutorProcessTimeout}") +
-        listOf("-p", "$rdPort")
+        listOf("-p", "$rdPort") +
+        if (InstrumentationModuleConstants.concolicMode) listOf("-cm") else emptyList()
 
     suspend fun init(parentLifetime: Lifetime) {
         val processLifetime = LifetimeDefinition(parentLifetime)

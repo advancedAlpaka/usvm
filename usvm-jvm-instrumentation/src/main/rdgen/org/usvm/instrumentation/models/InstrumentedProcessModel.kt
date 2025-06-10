@@ -60,6 +60,11 @@ object InstrumentedProcessModel : Ext(InstrumentedProcessRoot) {
         field("classId", PredefinedType.long)
     }
 
+    private val indexToValue = structdef {
+        field("index", PredefinedType.int)
+        field("concreteValue", UTestValueDescriptor)
+    }
+
     private val executionResult = structdef {
         field("type", enum("ExecutionResultType") {
             +"UTestExecutionInitFailedResult"
@@ -70,6 +75,7 @@ object InstrumentedProcessModel : Ext(InstrumentedProcessRoot) {
         })
         field("classes", immutableList(classToId).nullable)
         field("trace", immutableList(PredefinedType.long).nullable)
+        field("concreteValues", immutableList(immutableList(indexToValue)).nullable)
         field("cause", UTestValueDescriptor.nullable)
         field("result", UTestValueDescriptor.nullable)
         field("initialState", executionStateSerialized.nullable)

@@ -7,4 +7,20 @@ import org.usvm.instrumentation.testcase.api.UTestInst
 class UTest(
     val initStatements: List<UTestInst>,
     val callMethodExpression: UTestCall
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UTest) return false
+
+        if (initStatements != other.initStatements) return false
+        if (callMethodExpression != other.callMethodExpression) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = initStatements.hashCode()
+        result = 31 * result + callMethodExpression.hashCode()
+        return result
+    }
+}

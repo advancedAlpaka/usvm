@@ -35,6 +35,7 @@ val approximationsVersion = "5f137507d6"
 dependencies {
     implementation(project(":usvm-core"))
     implementation(project(":usvm-jvm-dataflow"))
+    implementation(project(":usvm-jvm-instrumentation"))
 
     implementation(Libs.jacodb_api_jvm)
     implementation(Libs.jacodb_core)

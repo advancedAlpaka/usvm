@@ -5,9 +5,10 @@ import org.jacodb.api.jvm.JcField
 import org.jacodb.api.jvm.ext.findClass
 import org.jacodb.api.jvm.ext.toType
 import org.usvm.instrumentation.classloader.WorkerClassLoader
+import org.usvm.instrumentation.collector.trace.ConcolicCollector
 import org.usvm.instrumentation.collector.trace.MockCollector
 import org.usvm.instrumentation.collector.trace.TraceCollector
-import org.usvm.instrumentation.instrumentation.JcInstructionTracer
+import org.usvm.instrumentation.instrumentation.*
 import org.usvm.instrumentation.mock.MockHelper
 import org.usvm.instrumentation.testcase.UTest
 import org.usvm.instrumentation.testcase.api.*
@@ -19,7 +20,8 @@ import java.lang.Exception
 
 class UTestExecutor(
     private val jcClasspath: JcClasspath,
-    private val ucp: URLClassPathLoader
+    private val ucp: URLClassPathLoader,
+    private val tracer: Tracer<*>
 ) {
 
     private var workerClassLoader = createWorkerClassLoader()
@@ -46,6 +48,7 @@ class UTestExecutor(
             traceCollectorClassLoader = this::class.java.classLoader,
             traceCollectorClassName = TraceCollector::class.java.name,
             mockCollectorClassName = MockCollector::class.java.name,
+            concolicCollectorClassName = ConcolicCollector::class.java.name,
             jcClasspath = jcClasspath
         )
 
@@ -58,7 +61,7 @@ class UTestExecutor(
         staticDescriptorsBuilder.setInitialValue2DescriptorConverter(initStateDescriptorBuilder)
         //In case of new worker classloader
         workerClassLoader.setStaticDescriptorsBuilder(staticDescriptorsBuilder)
-        JcInstructionTracer.reset()
+        tracer.reset()
         MockCollector.mocks.clear()
     }
 
@@ -81,10 +84,11 @@ class UTestExecutor(
                         exception = it,
                         raisedByUserCode = false
                     ),
-                    trace = JcInstructionTracer.getTrace().trace
+                    trace = tracer.getTrace().trace,
+                    concreteValues = null
                 )
             }
-        accessedStatics.addAll(JcInstructionTracer.getTrace().statics.toSet())
+        if (tracer is JcInstructionTracer) accessedStatics.addAll(tracer.getTrace().statics.toSet())
         val initExecutionState = buildExecutionState(
             callMethodExpr = callMethodExpr,
             executor = executor,
@@ -102,8 +106,8 @@ class UTestExecutor(
                 else -> methodInvocationResult.getOrNull()
             }
 
-        val trace = JcInstructionTracer.getTrace()
-        accessedStatics.addAll(trace.statics.toSet())
+        val trace = tracer.getTrace()
+        if (trace is TraceWithStatics) accessedStatics.addAll(trace.statics.toSet())
 
         if (unpackedInvocationResult is Throwable) {
             val resultExecutionState =
@@ -114,7 +118,8 @@ class UTestExecutor(
                     exception = unpackedInvocationResult,
                     raisedByUserCode = methodInvocationResult.isSuccess
                 ),
-                trace = JcInstructionTracer.getTrace().trace,
+                trace = tracer.getTrace().trace,
+                concreteValues = trace.getConcreteValues(resultStateDescriptorBuilder),
                 initialState = initExecutionState,
                 resultState = resultExecutionState
             )
@@ -135,10 +140,22 @@ class UTestExecutor(
             workerClassLoader.reset(accessedStaticsFields)
         }
 
-
         return UTestExecutionSuccessResult(
-            trace.trace, methodInvocationResultDescriptor, initExecutionState, resultExecutionState
+            trace.trace, trace.getConcreteValues(resultStateDescriptorBuilder),
+            methodInvocationResultDescriptor, initExecutionState, resultExecutionState
         )
+    }
+
+    private fun Trace.getConcreteValues(
+        descriptorBuilder: Value2DescriptorConverter
+    ): List<Map<Int, UTestValueDescriptor>>? {
+        if (this !is ConcolicTrace) return null
+
+        return symbolicInstructionsTrace.map {
+            it.concreteArguments.entries.associate { (k, v) -> k to
+                    descriptorBuilder.buildDescriptorResultFromAny(v, null).getOrThrow()
+            }
+        }
     }
 
     private fun buildExceptionDescriptor(

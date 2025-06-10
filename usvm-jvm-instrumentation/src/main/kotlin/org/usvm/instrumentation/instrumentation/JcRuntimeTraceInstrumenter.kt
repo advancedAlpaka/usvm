@@ -4,6 +4,7 @@ import org.jacodb.api.jvm.JcClasspath
 import org.jacodb.api.jvm.JcMethod
 import org.jacodb.api.jvm.cfg.*
 import org.jacodb.api.jvm.ext.isEnum
+import org.jacodb.impl.cfg.JcMutableInstListImpl
 import org.jacodb.impl.cfg.MethodNodeBuilder
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.MethodNode
@@ -16,14 +17,17 @@ import org.usvm.instrumentation.util.replace
  * Class for runtime instrumentation for jcdb instructions
  * Collecting trace and information about static access
  */
-class JcRuntimeTraceInstrumenter(
-    override val jcClasspath: JcClasspath
+open class JcRuntimeTraceInstrumenter(
+    override val jcClasspath: JcClasspath,
+    private val tracer: Tracer<*>
 ) : JcInstrumenter, AbstractFullRawExprSetCollector() {
+
+    protected open val instrumentConstructors = false
 
     private val rawStaticsGet = hashSetOf<JcRawFieldRef>()
     private val rawStaticsSet = hashSetOf<JcRawFieldRef>()
 
-    private val traceHelper = TraceHelper(jcClasspath, TraceCollector::class.java)
+    private val traceHelper by lazy { TraceHelper(jcClasspath, TraceCollector::class.java) }
     private val coveredInstructionMethodName = "jcInstructionCovered"
     private val staticFieldAccessedMethodName = "jcStaticFieldAccessed"
 
@@ -45,32 +49,46 @@ class JcRuntimeTraceInstrumenter(
         if (expr is JcRawFieldRef && expr.instance == null) rawStaticsGet.add(expr)
     }
 
-    private fun instrumentMethod(jcMethod: JcMethod): MethodNode {
-        val rawJcInstructionsList = jcMethod.rawInstList.filter { it !is JcRawLabelInst && it !is JcRawLineNumberInst }
-        val jcInstructionsList = jcMethod.instList
-        val instrumentedJcInstructionsList = jcMethod.rawInstList.toMutableList()
-        for (i in jcInstructionsList.indices) {
-            val encodedInst = JcInstructionTracer.encode(jcInstructionsList[i])
-            val invocation = traceHelper.createTraceMethodCall(encodedInst, coveredInstructionMethodName)
-            instrumentedJcInstructionsList.insertBefore(rawJcInstructionsList[i], invocation)
+    open fun processInstruction(
+        encodedInst: Long,
+        rawJcInstruction: JcRawInst,
+        instrumentedInstructionsList: JcMutableInstList<JcRawInst>
+    ) {
+        val invocation = traceHelper.createTraceMethodCall(encodedInst, coveredInstructionMethodName)
+        instrumentedInstructionsList.insertBefore(rawJcInstruction, invocation)
 
-            getStaticFieldRefs(rawJcInstructionsList[i])
+        if (tracer is JcInstructionTracer) {
+            getStaticFieldRefs(rawJcInstruction)
             rawStaticsSet.forEach { jcRawFieldRef ->
-                val encodedRef = JcInstructionTracer.encodeStaticFieldAccess(
+                val encodedRef = tracer.encodeStaticFieldAccess(
                     jcRawFieldRef, StaticFieldAccessType.SET, jcClasspath
                 )
                 val traceMethodCall = traceHelper.createTraceMethodCall(encodedRef, staticFieldAccessedMethodName)
-                instrumentedJcInstructionsList.insertBefore(rawJcInstructionsList[i], traceMethodCall)
+                instrumentedInstructionsList.insertBefore(rawJcInstruction, traceMethodCall)
             }
             rawStaticsGet.forEach { jcRawFieldRef ->
-                val encodedRef = JcInstructionTracer.encodeStaticFieldAccess(
+                val encodedRef = tracer.encodeStaticFieldAccess(
                     jcRawFieldRef, StaticFieldAccessType.GET, jcClasspath
                 )
                 val traceMethodCall = traceHelper.createTraceMethodCall(encodedRef, staticFieldAccessedMethodName)
-                instrumentedJcInstructionsList.insertBefore(rawJcInstructionsList[i], traceMethodCall)
+                instrumentedInstructionsList.insertBefore(rawJcInstruction, traceMethodCall)
             }
         }
-        return MethodNodeBuilder(jcMethod, instrumentedJcInstructionsList).build()
+    }
+
+    open fun atMethodStart(jcMethod: JcMethod, instrumentedInstructionsList: JcMutableInstList<JcRawInst>) {}
+
+    private fun instrumentMethod(jcMethod: JcMethod): MethodNode {
+        val (changedMethod, instructions) = SignaturesChanger().instrumentMethod(jcMethod)
+        val rawJcInstructionsList = instructions.filter { it !is JcRawLabelInst && it !is JcRawLineNumberInst }
+        val jcInstructionsList = jcMethod.instList
+        val instrumentedJcInstructionsList = JcMutableInstListImpl(instructions)
+        atMethodStart(changedMethod, instrumentedJcInstructionsList)
+        for (i in jcInstructionsList.indices) {
+            val encodedInst = tracer.encode(jcInstructionsList[i])
+            processInstruction(encodedInst, rawJcInstructionsList[i], instrumentedJcInstructionsList)
+        }
+        return MethodNodeBuilder(changedMethod, instrumentedJcInstructionsList).build()
     }
 
     override fun instrumentClass(classNode: ClassNode): ClassNode {
@@ -78,10 +96,11 @@ class JcRuntimeTraceInstrumenter(
         val jcClass = jcClasspath.findClassOrNull(className) ?: return classNode
         val asmMethods = classNode.methods
         val methodsToInstrument = if (jcClass.isEnum) {
-            jcClass.declaredMethods.filterNot { it.isConstructor || it.isClassInitializer || it.name == "values" || it.name == "valueOf" }
+            jcClass.declaredMethods.filterNot { it.isClassInitializer || it.name == "values" || it.name == "valueOf" }
         } else {
-            jcClass.declaredMethods.filterNot { it.isConstructor || it.isClassInitializer }
-        }
+            jcClass.declaredMethods.filterNot { it.isClassInitializer }
+        }.filterNot { it.instList.size == 0 }
+            .filterNot { if (instrumentConstructors) it.isDefaultEmptyConstructor() else it.isConstructor }
         //Copy of clinit method to be able to rollback statics between executions!
         //We are not able to call <clinit> method directly with reflection
         asmMethods.find { it.name == "<clinit>" }?.let { clinitNode ->
@@ -101,4 +120,8 @@ class JcRuntimeTraceInstrumenter(
         const val GENERATED_CLINIT_NAME = "generatedClinit0"
     }
 
+    private fun JcMethod.isDefaultEmptyConstructor(): Boolean {
+        return isConstructor && parameters.isEmpty() &&
+                rawInstList.filter { it !is JcRawLabelInst && it !is JcRawLineNumberInst }.size == 2
+    }
 }
