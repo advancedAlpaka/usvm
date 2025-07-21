@@ -57,6 +57,7 @@ dependencies {
 
     implementation(Libs.jacodb_api_storage)
     implementation(Libs.jacodb_storage)
+    implementation(Libs.jacodb_approximations)
 
     implementation(Libs.rd_framework)
     implementation(Libs.ini4j)
