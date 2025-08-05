@@ -3,24 +3,20 @@ package org.usvm.instrumentation.classloader
 import org.jacodb.api.jvm.JcClassOrInterface
 import org.jacodb.api.jvm.JcClasspath
 import org.jacodb.api.jvm.ext.allSuperHierarchySequence
-import org.jacodb.approximation.ApproximationClassName
-import org.jacodb.approximation.Approximations
-import org.jacodb.approximation.JcEnrichedVirtualMethod
 import org.jacodb.impl.cfg.MethodNodeBuilder
 import org.jacodb.impl.features.classpaths.JcUnknownClass
-import org.usvm.instrumentation.util.replace
-import org.usvm.instrumentation.util.toByteArray
+import org.objectweb.asm.Opcodes
+import org.objectweb.asm.tree.ClassNode
+import org.usvm.instrumentation.ConcolicHelper
+import org.usvm.instrumentation.instrumentation.JcInstrumenterFactory
+import org.usvm.instrumentation.instrumentation.JcRuntimeConcolicInstrumenterFactory
+import org.usvm.instrumentation.util.*
 import java.io.File
 import java.net.URI
 import java.net.URL
 import java.nio.ByteBuffer
 import java.security.CodeSource
-import java.security.SecureClassLoader
-import java.util.Collections
-import java.util.Enumeration
-import java.util.IdentityHashMap
-import java.util.LinkedList
-import java.util.Queue
+import java.util.*
 import java.util.jar.JarEntry
 import java.util.jar.JarFile
 
@@ -28,8 +24,20 @@ import java.util.jar.JarFile
  * Loads known classes using [ClassLoader.getSystemClassLoader], or defines them using bytecode from jacodb if they are unknown.
  */
 // TODO: make this 'class'
-object JcConcreteMemoryClassLoader : SecureClassLoader(getSystemClassLoader()) {
+object JcConcreteMemoryClassLoader : MetaClassLoader(getSystemClassLoader()) {
     lateinit var cp: JcClasspath
+    private val instrumenterCache = HashMap<String, ByteArray>()
+    private val instrumenterFactoryInstance = JcRuntimeConcolicInstrumenterFactory()
+
+    override val jcClasspath: JcClasspath
+        get() = cp
+
+    override fun redefineClass(jClass: Class<*>, asmBody: ClassNode) {
+        TODO("Not yet implemented")
+    }
+
+    override fun defineClass(name: String, classNode: ClassNode) =
+        defineClass(name, classNode.toByteArray(cp))
 
     private val File.isJar
         get() = this.extension == "jar"
@@ -51,6 +59,26 @@ object JcConcreteMemoryClassLoader : SecureClassLoader(getSystemClassLoader()) {
         return entryName == name
                 || entryName.endsWith(name)
                 || !single && entryName.contains(name)
+    }
+
+    private val beforeIfAction: java.util.function.Function<String, Void?> =
+        java.util.function.Function { obj: String ->
+            println("!!!Hi from beforeIfAction!!!")
+            println("I am executing in ${Thread.currentThread().name}")
+            println("Info from executor: $obj")
+            return@Function null
+        }
+
+    private fun initConcolicHelper(type: Class<*>) {
+        check(type.typeName == ConcolicHelper::class.java.typeName)
+
+        type.declaredFields.first().get(null)
+        // Initializing static fields
+        for (field in type.staticFields) {
+            when (field.name) {
+                ConcolicHelper::beforeIfAction.javaName -> field.setStaticFieldValue(beforeIfAction)
+            }
+        }
     }
 
     private fun findResourcesInFolder(
@@ -137,11 +165,7 @@ object JcConcreteMemoryClassLoader : SecureClassLoader(getSystemClassLoader()) {
         if (name == null)
             throw ClassNotFoundException()
 
-        if (name == "jdk.vm.ci.meta.Assumptions")
-            println("AHTUNG!")
-
-        if (name == "ch.qos.logback.classic.spi.Configurator")
-            println()
+        if (name.startsWith("org.usvm.instrumentation.collector.trace.")) return super.loadClass(name)
 
         val loaded = findLoadedClass(name)
         if (loaded != null)
@@ -179,29 +203,19 @@ object JcConcreteMemoryClassLoader : SecureClassLoader(getSystemClassLoader()) {
             ?: error("Can't define class $jcClass")
 
     private fun getBytecode(jcClass: JcClassOrInterface): ByteArray {
-        val instrumentedMethods = jcClass.declaredMethods
-
-        if (instrumentedMethods.isEmpty())
+        if(ConcolicHelper::class.java.typeName == jcClass.name)
             return jcClass.bytecode()
 
-        return jcClass.withAsmNode { asmNode ->
-            for (method in instrumentedMethods) {
-                val isApproximated = method is JcEnrichedVirtualMethod
-                        || Approximations.findOriginalByApproximationOrNull(ApproximationClassName(jcClass.name)) != null
-                if (isApproximated && asmNode.methods.none { it.name == method.name && it.desc == method.description })
-                    continue
+        val instrumenter = instrumenterFactoryInstance.create(cp)
 
-                if (isApproximated)
-                    error("JcConcreteMemoryClassLoader.getBytecode: unable to find original method $method")
+        return instrumenterCache.getOrPut(jcClass.name) {
+            jcClass.withAsmNode { asmNode ->
+                if (asmNode.version < Opcodes.V1_8)
+                    return@withAsmNode asmNode.toByteArray(cp)
 
-                val rawInstList = method.rawInstList
-
-                val newMethodNode = MethodNodeBuilder(method, rawInstList).build()
-                val oldMethodNode = asmNode.methods.find { it.name == method.name && it.desc == method.description }
-                asmNode.methods.replace(oldMethodNode, newMethodNode)
+                val instrumentedClassNode = instrumenter.instrumentClass(asmNode)
+                return@withAsmNode instrumentedClassNode.toByteArray(cp, checkClass = true)
             }
-
-            asmNode.toByteArray(jcClass.classpath)
         }
     }
 
@@ -225,6 +239,8 @@ object JcConcreteMemoryClassLoader : SecureClassLoader(getSystemClassLoader()) {
 
         val bytecode = getBytecode(jcClass)
         val loadedClass = defineClass(className, bytecode)
+        if (loadedClass.typeName == ConcolicHelper::class.java.typeName)
+            initConcolicHelper(loadedClass)
 
         return loadedClass
     }

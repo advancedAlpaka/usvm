@@ -28,3 +28,4 @@ fun UTestObjectDescriptor.getAllFields(): Set<Pair<JcField, UTestValueDescriptor
     }
     return res
 }
+

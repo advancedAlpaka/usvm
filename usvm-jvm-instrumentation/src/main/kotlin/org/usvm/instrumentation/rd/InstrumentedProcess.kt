@@ -99,7 +99,7 @@ class InstrumentedProcess private constructor() {
         serializationCtx = SerializationContext(jcClasspath)
         ucp = URLClassPathLoader(fileClassPath)
         tracer = if (concolicMode) JcConcolicTracer else JcInstructionTracer
-        uTestExecutor = UTestExecutor(jcClasspath, ucp, tracer)
+        uTestExecutor = UTestExecutor(jcClasspath, tracer)
     }
 
     private suspend fun initiate(lifetime: Lifetime, port: Int) {

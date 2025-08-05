@@ -4,7 +4,7 @@ package org.usvm.instrumentation.testcase.executor
 import org.jacodb.api.jvm.JcArrayType
 import org.jacodb.api.jvm.JcField
 import org.jacodb.api.jvm.ext.*
-import org.usvm.instrumentation.classloader.WorkerClassLoader
+import org.usvm.instrumentation.classloader.MetaClassLoader
 import org.usvm.instrumentation.instrumentation.JcInstructionTracer.StaticFieldAccessType
 import org.usvm.instrumentation.mock.MockHelper
 import org.usvm.instrumentation.testcase.api.*
@@ -15,8 +15,7 @@ import java.lang.ClassCastException
 import java.lang.IllegalArgumentException
 
 class UTestExpressionExecutor(
-    private val workerClassLoader: WorkerClassLoader,
-    private val accessedStatics: MutableSet<Pair<JcField, StaticFieldAccessType>>,
+    private val workerClassLoader: MetaClassLoader,
     private val mockHelper: MockHelper
 ) {
 
@@ -239,7 +238,6 @@ class UTestExpressionExecutor(
     private fun executeUTestSetStaticFieldStatement(uTestSetFieldStatement: UTestSetStaticFieldStatement) {
         val field = uTestSetFieldStatement.field.toJavaField(workerClassLoader)
         val fieldValue = exec(uTestSetFieldStatement.value)
-        accessedStatics.add(uTestSetFieldStatement.field to StaticFieldAccessType.SET)
         field?.setFieldValue(null, fieldValue)
     }
 
@@ -285,7 +283,6 @@ class UTestExpressionExecutor(
 
     private fun executeUTestGetStaticFieldExpression(uTestGetStaticFieldExpression: UTestGetStaticFieldExpression): Any? {
         val jField = uTestGetStaticFieldExpression.field.toJavaField(workerClassLoader)
-        accessedStatics.add(uTestGetStaticFieldExpression.field to StaticFieldAccessType.GET)
         return jField?.getFieldValue(null)
     }
 

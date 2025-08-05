@@ -1,8 +1,8 @@
 package org.usvm.instrumentation.instrumentation
 
-import org.jacodb.api.*
 import org.jacodb.api.jvm.JcClasspath
 import org.jacodb.api.jvm.JcMethod
+import org.jacodb.api.jvm.PredefinedPrimitives
 import org.jacodb.api.jvm.TypeName
 import org.jacodb.api.jvm.cfg.JcMutableInstList
 import org.jacodb.api.jvm.cfg.*
@@ -12,8 +12,10 @@ import org.jacodb.api.jvm.ext.*
 import org.jacodb.impl.cfg.*
 import org.jacodb.impl.cfg.util.isPrimitive
 import org.jacodb.impl.types.TypeNameImpl
+import org.usvm.instrumentation.ConcolicHelper
 import org.usvm.instrumentation.collector.trace.ConcolicCollector
 import org.usvm.instrumentation.util.getTypename
+import org.usvm.instrumentation.util.javaName
 
 class JcRuntimeConcolicInstrumenter(
     override val jcClasspath: JcClasspath
@@ -144,8 +146,17 @@ class JcRuntimeConcolicInstrumenter(
             is JcRawThrowInst,
             is JcRawEnterMonitorInst,
             is JcRawExitMonitorInst -> {
+                val info = "${owner.enclosingClass.name}:${owner.name}"
+                val callExpr = JcRawStaticCallExpr(
+                    declaringClass = TypeNameImpl.fromTypeName(ConcolicHelper::class.java.typeName),
+                    methodName = ConcolicHelper::beforeIf.javaName,
+                    argumentTypes = listOf(TypeNameImpl.fromTypeName("java.lang.String")),
+                    returnType = TypeNameImpl.fromTypeName(PredefinedPrimitives.Void),
+                    args = listOf(JcRawString(info))
+                )
                 val processOperandsInstructions =
-                    OperandsProcessor(encodedInst).getProcessOperandsInstructions(rawJcInstruction)
+                    OperandsProcessor(encodedInst).getProcessOperandsInstructions(rawJcInstruction) + JcRawCallInst(owner, callExpr)
+
                 instrumentedInstructionsList.insertBefore(rawJcInstruction,  processOperandsInstructions)
             }
 

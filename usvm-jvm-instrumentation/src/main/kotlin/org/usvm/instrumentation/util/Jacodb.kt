@@ -9,6 +9,8 @@ import org.usvm.instrumentation.testcase.executor.TestExecutorException
 import java.lang.reflect.Constructor
 import java.lang.reflect.Field
 import java.lang.reflect.Method
+import kotlin.reflect.jvm.javaField
+import kotlin.reflect.jvm.javaMethod
 
 fun JcClasspath.stringType(): JcType {
     return findClassOrNull("java.lang.String")!!.toType()
@@ -165,3 +167,9 @@ fun Method.isSameSignatures(jcMethod: JcMethod) =
 
 fun JcMethod.isSameSignature(mn: MethodNode): Boolean =
     withAsmNode { it.isSameSignature(mn) }
+
+val kotlin.reflect.KFunction<*>.javaName: String
+    get() = this.javaMethod?.name ?: error("No java name for method $this")
+
+val kotlin.reflect.KProperty<*>.javaName: String
+    get() = this.javaField?.name ?: error("No java name for field $this")

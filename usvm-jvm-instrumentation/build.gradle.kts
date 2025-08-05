@@ -29,7 +29,9 @@ sourceSets {
 
     test {
         compileClasspath += samples.output
+        compileClasspath += collectors.output
         runtimeClasspath += samples.output
+        runtimeClasspath += collectors.output
     }
 }
 
@@ -57,7 +59,6 @@ dependencies {
 
     implementation(Libs.jacodb_api_storage)
     implementation(Libs.jacodb_storage)
-    implementation(Libs.jacodb_approximations)
 
     implementation(Libs.rd_framework)
     implementation(Libs.ini4j)
@@ -178,6 +179,7 @@ val collectorsJarTask = tasks.register<Jar>("collectorsJar") {
 sourceSets.main.get().compileClasspath += collectorsJarTask.get().outputs.files
 
 tasks.withType<Test> {
+    //jvmArgs = listOf("-agentpath:/usr/lib/libasyncProfiler.so=start,event=cpu,file=profile.html")
     environment(
         "usvm-jvm-instrumentation-jar",
         instrumentationRunnerJar.get().outputs.files.single()

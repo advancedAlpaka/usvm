@@ -14,12 +14,17 @@ import org.usvm.PathSelectionStrategy
 import org.usvm.UMachineOptions
 import org.usvm.api.targets.JcTarget
 import org.usvm.api.util.JcTestStateResolver
+import org.usvm.instrumentation.classloader.JcConcreteMemoryClassLoader
 import org.usvm.instrumentation.executor.UTestConcreteExecutor
+import org.usvm.instrumentation.generated.models.SerializedUTest
+import org.usvm.instrumentation.instrumentation.JcConcolicTracer
 import org.usvm.instrumentation.instrumentation.JcRuntimeConcolicInstrumenterFactory
+import org.usvm.instrumentation.rd.UTestExecutor
 import org.usvm.instrumentation.testcase.UTest
 import org.usvm.instrumentation.testcase.api.*
 import org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor
 import org.usvm.instrumentation.util.InstrumentationModuleConstants
+import org.usvm.instrumentation.util.URLClassPathLoader
 import org.usvm.instrumentation.util.getTypename
 import org.usvm.instrumentation.util.toJcClass
 import org.usvm.instrumentation.util.toJcType
@@ -27,12 +32,13 @@ import org.usvm.machine.JcApplicationGraph
 import org.usvm.machine.JcMachine
 import org.usvm.machine.state.JcState
 import org.usvm.ps.BfsPathSelector
+import org.usvm.util.JcTestExecutorDecoderApi
 import org.usvm.util.MemoryScope
 import java.io.File
 
 class JvmConcolicRunner(jarPaths: List<String>, private val method: JcMethod) : AutoCloseable {
 
-    private var concreteExecutor: UTestConcreteExecutor
+    private var concreteExecutor: UTestExecutor
     private var classpath: JcClasspath
     private var applicationGraph: JcApplicationGraph
 
@@ -46,13 +52,9 @@ class JvmConcolicRunner(jarPaths: List<String>, private val method: JcMethod) : 
             }
             classpath = db.classpath(jarFilePaths)
             applicationGraph = JcApplicationGraph(classpath)
-            concreteExecutor = UTestConcreteExecutor(
-                JcRuntimeConcolicInstrumenterFactory::class,
-                jarPaths +
-                        InstrumentationModuleConstants.pathToUsvmCollectorsJar +
-                        InstrumentationModuleConstants.pathToPatchedStdlib,
+            concreteExecutor = UTestExecutor(
                 classpath,
-                InstrumentationModuleConstants.testExecutionTimeout
+                JcConcolicTracer
             )
         }
     }
@@ -73,7 +75,7 @@ class JvmConcolicRunner(jarPaths: List<String>, private val method: JcMethod) : 
         ConcolicResult(concreteRuns, symbolicExecutions)
     }
 
-    private suspend fun executeConcolic(
+    private fun executeConcolic(
         test: UTest,
         concreteRuns: MutableList<ConcreteRun>,
         symbolicExecutions: MutableList<SymbolicExecutionTrace>
@@ -102,9 +104,8 @@ class JvmConcolicRunner(jarPaths: List<String>, private val method: JcMethod) : 
         }
     }
 
-    private suspend fun executeConcrete(uTest: UTest): UTestExecutionResult {
-        concreteExecutor.ensureRunnerAlive()
-        return concreteExecutor.executeAsync(uTest)
+    fun executeConcrete(uTest: UTest): UTestExecutionResult {
+        return concreteExecutor.executeUTest(uTest)
     }
 
     private fun executeSymbolic(
@@ -230,7 +231,5 @@ class JvmConcolicRunner(jarPaths: List<String>, private val method: JcMethod) : 
         }
     }
 
-    override fun close() {
-        concreteExecutor.close()
-    }
+    override fun close() {}
 }

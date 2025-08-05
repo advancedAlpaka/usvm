@@ -4,12 +4,11 @@ import org.jacodb.api.jvm.JcClassOrInterface
 import org.jacodb.api.jvm.JcField
 import org.jacodb.api.jvm.ext.enumValues
 import org.jacodb.api.jvm.ext.isEnum
-import org.usvm.instrumentation.classloader.WorkerClassLoader
 import org.usvm.instrumentation.instrumentation.JcInstructionTracer.StaticFieldAccessType
 import org.usvm.instrumentation.util.*
 
 class StaticDescriptorsBuilder(
-    private var workerClassLoader: WorkerClassLoader,
+    private var workerClassLoader: ClassLoader,
     private var initialValue2DescriptorConverter: Value2DescriptorConverter
 ) {
 
@@ -18,7 +17,7 @@ class StaticDescriptorsBuilder(
     private val stateAfterStaticsDescriptors = HashMap<JcField, UTestValueDescriptor?>()
     private val descriptor2ValueConverter = Descriptor2ValueConverter(workerClassLoader)
 
-    fun setClassLoader(workerClassLoader: WorkerClassLoader) {
+    fun setClassLoader(workerClassLoader: ClassLoader) {
         this.workerClassLoader = workerClassLoader
     }
 

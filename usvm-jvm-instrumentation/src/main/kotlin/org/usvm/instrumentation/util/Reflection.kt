@@ -151,3 +151,24 @@ val Field.isStatic: Boolean
 
 val Field.isFinal: Boolean
     get() = (this.modifiers and Modifier.FINAL) == Modifier.FINAL
+
+private val Class<*>.safeDeclaredFields: List<Field> get() {
+    return try {
+        declaredFields.toList()
+    } catch (e: Throwable) {
+        emptyList()
+    }
+}
+
+val Class<*>.staticFields: List<Field>
+    get() = safeDeclaredFields.filter { Modifier.isStatic(it.modifiers) }
+
+internal fun Field.setStaticFieldValue(value: Any?) {
+    check(isStatic)
+    try {
+        isAccessible = true
+        set(null, value)
+    } catch (_: Throwable) {
+        setFieldValue(null, value)
+    }
+}

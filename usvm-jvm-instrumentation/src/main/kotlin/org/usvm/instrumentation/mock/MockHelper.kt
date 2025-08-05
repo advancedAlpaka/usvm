@@ -14,13 +14,13 @@ import org.jacodb.impl.cfg.util.isPrimitive
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.MethodNode
-import org.usvm.instrumentation.classloader.WorkerClassLoader
+import org.usvm.instrumentation.classloader.MetaClassLoader
 import org.usvm.instrumentation.collector.trace.MockCollector
 import org.usvm.instrumentation.instrumentation.JcInstructionTracer
 import org.usvm.instrumentation.instrumentation.TraceHelper
 import org.usvm.instrumentation.util.*
 
-class MockHelper(val jcClasspath: JcClasspath, val classLoader: WorkerClassLoader) {
+class MockHelper(val jcClasspath: JcClasspath, val classLoader: MetaClassLoader) {
 
     //Using for not remock methods of usual classes
     val mockCache = hashMapOf<JcMethod, Long>()
