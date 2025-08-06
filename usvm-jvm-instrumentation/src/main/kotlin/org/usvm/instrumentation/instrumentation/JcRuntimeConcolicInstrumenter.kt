@@ -141,11 +141,7 @@ class JcRuntimeConcolicInstrumenter(
                 instrumentedInstructionsList.insertBefore(rawJcInstruction, getOnExitFunctionInstructions())
             }
 
-            is JcRawIfInst,
-            is JcRawSwitchInst,
-            is JcRawThrowInst,
-            is JcRawEnterMonitorInst,
-            is JcRawExitMonitorInst -> {
+            is JcRawIfInst -> {
                 val info = "${owner.enclosingClass.name}:${owner.name}"
                 val callExpr = JcRawStaticCallExpr(
                     declaringClass = TypeNameImpl.fromTypeName(ConcolicHelper::class.java.typeName),
@@ -156,6 +152,16 @@ class JcRuntimeConcolicInstrumenter(
                 )
                 val processOperandsInstructions =
                     OperandsProcessor(encodedInst).getProcessOperandsInstructions(rawJcInstruction) + JcRawCallInst(owner, callExpr)
+
+                instrumentedInstructionsList.insertBefore(rawJcInstruction,  processOperandsInstructions)
+            }
+
+            is JcRawThrowInst,
+            is JcRawEnterMonitorInst,
+            is JcRawExitMonitorInst,
+            is JcRawSwitchInst -> {
+                val processOperandsInstructions =
+                    OperandsProcessor(encodedInst).getProcessOperandsInstructions(rawJcInstruction)
 
                 instrumentedInstructionsList.insertBefore(rawJcInstruction,  processOperandsInstructions)
             }

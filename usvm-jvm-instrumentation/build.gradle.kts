@@ -29,7 +29,6 @@ sourceSets {
 
     test {
         compileClasspath += samples.output
-        compileClasspath += collectors.output
         runtimeClasspath += samples.output
         runtimeClasspath += collectors.output
     }

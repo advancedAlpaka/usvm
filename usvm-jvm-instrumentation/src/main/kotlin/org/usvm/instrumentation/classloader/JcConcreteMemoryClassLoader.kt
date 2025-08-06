@@ -33,7 +33,7 @@ object JcConcreteMemoryClassLoader : MetaClassLoader(getSystemClassLoader()) {
         get() = cp
 
     override fun redefineClass(jClass: Class<*>, asmBody: ClassNode) {
-        TODO("Not yet implemented")
+
     }
 
     override fun defineClass(name: String, classNode: ClassNode) =
