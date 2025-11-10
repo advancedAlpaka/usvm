@@ -4,7 +4,7 @@ public class ConcolicTests {
     public static int lol(int a) {
         int b = a;
         int c = 3;
-        int g = a == 5 ? 4 : b;
+        int g = a == 5 ? 4 : a;
         foo(b, c);
         foo(c, c);
         foo(g, c);
@@ -92,6 +92,14 @@ public class ConcolicTests {
 
     private static void bar(int i, D d) {
 
+    }
+
+    private static int returnIntConstant(int i, int j) {
+        return 2;
+    }
+
+    private static D returnDConstant(int i, int j) {
+        return new D();
     }
 
     private static void exception(int i) throws MyException {

@@ -4,6 +4,8 @@ import org.jacodb.api.jvm.JcClasspath
 import org.jacodb.api.jvm.cfg.JcInst
 import org.jacodb.api.jvm.cfg.JcRawFieldRef
 import org.usvm.instrumentation.collector.trace.ConcolicCollector
+import org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor
+import org.usvm.instrumentation.testcase.descriptor.Value2DescriptorConverter
 import org.usvm.instrumentation.util.toJcClassOrInterface
 
 object JcConcolicTracer : Tracer<ConcolicTrace>() {
@@ -15,15 +17,23 @@ object JcConcolicTracer : Tracer<ConcolicTrace>() {
             InstructionInfo(
                 decode(coveredInstructionsIds[idx]),
                 traceFrame.concreteArguments.take(traceFrame.argumentsPointer + 1)
-                    .associate { it.index to it.value }
+                    .map { it.index to it.value }
             )
         }
         return ConcolicTrace(symbolicInstructionsTrace)
     }
 
+    fun convertInfo(frame: ConcolicCollector.InstructionInfo?) =
+        frame?.let {
+            InstructionInfo(
+                decode(frame.jcInstructionId),
+                frame.concreteArguments.take(frame.argumentsPointer + 1).map { it.index to it.value }
+            )
+        }
+
     override fun coveredInstructionsIds(): List<Long> {
         val traceFromTraceCollector = mutableListOf<Long>()
-        for (i in 0 .. ConcolicCollector.tracePointer) {
+        for (i in 0..ConcolicCollector.tracePointer) {
             traceFromTraceCollector.add(ConcolicCollector.symbolicInstructionsTrace[i].jcInstructionId)
         }
         return List(traceFromTraceCollector.size) { idx -> traceFromTraceCollector[idx] }
@@ -68,5 +78,14 @@ data class ConcolicTrace(
 
 data class InstructionInfo(
     val instruction: JcInst,
-    val concreteArguments: Map<Int, Any>
-)
+    val concreteArguments: List<Pair<Int, Any>>
+) {
+    fun getConcreteValues(
+        descriptorBuilder: Value2DescriptorConverter
+    ): Map<Int, UTestValueDescriptor> {
+
+        return concreteArguments.associate { (k, v) -> k to
+                    descriptorBuilder.buildDescriptorResultFromAny(v, null).getOrThrow()
+            }
+    }
+}

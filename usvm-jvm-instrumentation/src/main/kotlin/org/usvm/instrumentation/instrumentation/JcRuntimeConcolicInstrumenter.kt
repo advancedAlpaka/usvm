@@ -8,6 +8,7 @@ import org.jacodb.api.jvm.cfg.JcMutableInstList
 import org.jacodb.api.jvm.cfg.*
 import org.jacodb.api.jvm.cfg.JcRawCallExpr
 import org.jacodb.api.jvm.cfg.JcRawInst
+import org.jacodb.api.jvm.cfg.JcRawStaticCallExpr
 import org.jacodb.api.jvm.ext.*
 import org.jacodb.impl.cfg.*
 import org.jacodb.impl.cfg.util.isPrimitive
@@ -37,25 +38,30 @@ class JcRuntimeConcolicInstrumenter(
 
     private val byteArray = with(jcClasspath) { arrayTypeOf(byte).getTypename() }
     private val arrayOfByteArray = with(jcClasspath) { arrayTypeOf(arrayTypeOf(byte)).getTypename() }
-    private val heapObjectDescriptor = TypeNameImpl.fromTypeName(ConcolicCollector.HeapObjectDescriptor::class.java.name)
+    private val heapObjectDescriptor =
+        TypeNameImpl.fromTypeName(ConcolicCollector.HeapObjectDescriptor::class.java.name)
     private val identityHashMap = TypeNameImpl.fromTypeName(ConcolicCollector.IdentityHashMap::class.java.name)
     private val instructionInfo = TypeNameImpl.fromTypeName(ConcolicCollector.InstructionInfo::class.java.name)
     private val instructionInfoArray = TypeNameImpl.fromTypeName("${instructionInfo.typeName}[]")
 
     private val stackPointer = concolicInfoHelper.createStaticFieldRef("stackPointer", int)
     private val argumentsFlagsStack = concolicInfoHelper.createStaticFieldRef("argumentsFlagsStack", arrayOfByteArray)
-    private val localVariablesFlagsStack = concolicInfoHelper.createStaticFieldRef("localVariablesFlagsStack", arrayOfByteArray)
+    private val localVariablesFlagsStack =
+        concolicInfoHelper.createStaticFieldRef("localVariablesFlagsStack", arrayOfByteArray)
     private val thisFlagsStack = concolicInfoHelper.createStaticFieldRef("thisFlagsStack", byteArray)
     private val heapFlags = concolicInfoHelper.createStaticFieldRef("heapFlags", identityHashMap)
     private val staticFieldsFlags = concolicInfoHelper.createStaticFieldRef("staticFieldsFlags", byteArray)
     private val tracePointer = concolicInfoHelper.createStaticFieldRef("tracePointer", int)
-    private val symbolicInstructionsTrace = concolicInfoHelper.createStaticFieldRef("symbolicInstructionsTrace", instructionInfoArray)
+    private val symbolicInstructionsTrace =
+        concolicInfoHelper.createStaticFieldRef("symbolicInstructionsTrace", instructionInfoArray)
 
     override fun processInstruction(
         encodedInst: Long,
         rawJcInstruction: JcRawInst,
         instrumentedInstructionsList: JcMutableInstList<JcRawInst>
     ) {
+        println("Process inst of: ${rawJcInstruction.owner}")
+
         when (rawJcInstruction) {
             is JcRawAssignInst -> {
                 val rhv = rawJcInstruction.rhv
@@ -67,56 +73,71 @@ class JcRuntimeConcolicInstrumenter(
                 }
 
                 val operandsProcessor = OperandsProcessor(encodedInst)
-                val processOperandsInstructions = operandsProcessor.getProcessOperandsInstructions(rawJcInstruction, listOf(rhv)) { flagsBuffer ->
-                    when (val lhv = rawJcInstruction.lhv) {
-                        is JcRawLocalVar -> add(
-                            JcRawAssignInst(
-                                owner,
-                                JcRawArrayAccess(
-                                    JcRawArrayAccess(localVariablesFlagsStack, stackPointer, byteArray),
-                                    JcRawInt(lhv.index), byte
-                                ),
-                                flagsBuffer
-                            )
-                        )
-
-                        is JcRawArgument -> add(
-                            JcRawAssignInst(
-                                owner,
-                                JcRawArrayAccess(
-                                    JcRawArrayAccess(argumentsFlagsStack, stackPointer, byteArray),
-                                    JcRawInt(lhv.index), byte
-                                ),
-                                flagsBuffer
-                            )
-                        )
-
-                        is JcRawArrayAccess ->
-                            addAll(createAssignToHeapObjectDescriptorInstructions(lhv.array, lhv.index, flagsBuffer))
-
-                        is JcRawFieldRef -> {
-                            val instance = lhv.instance
-                            if (instance == null) {
-                                val lengthLocalVar = newLocalVar(int, JcRawLengthExpr(int, staticFieldsFlags))
-
-                                `if`(JcRawGeExpr(boolean, lhv.fieldId, lengthLocalVar)) {
-                                    add(concolicInfoHelper.createResizeStaticFieldsFlagsMethodCall())
-                                }
-                                add(JcRawAssignInst(
+                val processOperandsInstructions =
+                    operandsProcessor.getProcessOperandsInstructions(rawJcInstruction, listOf(rhv)) { flagsBuffer ->
+                        when (val lhv = rawJcInstruction.lhv) {
+                            is JcRawLocalVar -> add(
+                                JcRawAssignInst(
                                     owner,
-                                    JcRawArrayAccess(staticFieldsFlags, lhv.fieldId, byte),
+                                    JcRawArrayAccess(
+                                        JcRawArrayAccess(localVariablesFlagsStack, stackPointer, byteArray),
+                                        JcRawInt(lhv.index), byte
+                                    ),
                                     flagsBuffer
-                                ))
-                            } else {
-                                addAll(createAssignToHeapObjectDescriptorInstructions(instance, lhv.fieldId, flagsBuffer))
-                            }
-                        }
+                                )
+                            )
 
-                        is JcRawConstant,
-                        is JcRawThis ->
-                            throw IllegalStateException("Variable expected as lhv of assign instruction")
+                            is JcRawArgument -> add(
+                                JcRawAssignInst(
+                                    owner,
+                                    JcRawArrayAccess(
+                                        JcRawArrayAccess(argumentsFlagsStack, stackPointer, byteArray),
+                                        JcRawInt(lhv.index), byte
+                                    ),
+                                    flagsBuffer
+                                )
+                            )
+
+                            is JcRawArrayAccess ->
+                                addAll(
+                                    createAssignToHeapObjectDescriptorInstructions(
+                                        lhv.array,
+                                        lhv.index,
+                                        flagsBuffer
+                                    )
+                                )
+
+                            is JcRawFieldRef -> {
+                                val instance = lhv.instance
+                                if (instance == null) {
+                                    val lengthLocalVar = newLocalVar(int, JcRawLengthExpr(int, staticFieldsFlags))
+
+                                    `if`(JcRawGeExpr(boolean, lhv.fieldId, lengthLocalVar)) {
+                                        add(concolicInfoHelper.createResizeStaticFieldsFlagsMethodCall())
+                                    }
+                                    add(
+                                        JcRawAssignInst(
+                                            owner,
+                                            JcRawArrayAccess(staticFieldsFlags, lhv.fieldId, byte),
+                                            flagsBuffer
+                                        )
+                                    )
+                                } else {
+                                    addAll(
+                                        createAssignToHeapObjectDescriptorInstructions(
+                                            instance,
+                                            lhv.fieldId,
+                                            flagsBuffer
+                                        )
+                                    )
+                                }
+                            }
+
+                            is JcRawConstant,
+                            is JcRawThis ->
+                                throw IllegalStateException("Variable expected as lhv of assign instruction")
+                        }
                     }
-                }
 
                 instrumentedInstructionsList.insertBefore(rawJcInstruction, processOperandsInstructions)
             }
@@ -137,25 +158,11 @@ class JcRuntimeConcolicInstrumenter(
                 val processOperandsInstructions =
                     OperandsProcessor(encodedInst).getProcessOperandsInstructions(rawJcInstruction)
 
-                instrumentedInstructionsList.insertBefore(rawJcInstruction,  processOperandsInstructions)
+                instrumentedInstructionsList.insertBefore(rawJcInstruction, processOperandsInstructions)
                 instrumentedInstructionsList.insertBefore(rawJcInstruction, getOnExitFunctionInstructions())
             }
 
-            is JcRawIfInst -> {
-                val info = "${owner.enclosingClass.name}:${owner.name}"
-                val callExpr = JcRawStaticCallExpr(
-                    declaringClass = TypeNameImpl.fromTypeName(ConcolicHelper::class.java.typeName),
-                    methodName = ConcolicHelper::beforeIf.javaName,
-                    argumentTypes = listOf(TypeNameImpl.fromTypeName("java.lang.String")),
-                    returnType = TypeNameImpl.fromTypeName(PredefinedPrimitives.Void),
-                    args = listOf(JcRawString(info))
-                )
-                val processOperandsInstructions =
-                    OperandsProcessor(encodedInst).getProcessOperandsInstructions(rawJcInstruction) + JcRawCallInst(owner, callExpr)
-
-                instrumentedInstructionsList.insertBefore(rawJcInstruction,  processOperandsInstructions)
-            }
-
+            is JcRawIfInst,
             is JcRawThrowInst,
             is JcRawEnterMonitorInst,
             is JcRawExitMonitorInst,
@@ -163,7 +170,7 @@ class JcRuntimeConcolicInstrumenter(
                 val processOperandsInstructions =
                     OperandsProcessor(encodedInst).getProcessOperandsInstructions(rawJcInstruction)
 
-                instrumentedInstructionsList.insertBefore(rawJcInstruction,  processOperandsInstructions)
+                instrumentedInstructionsList.insertBefore(rawJcInstruction, processOperandsInstructions)
             }
 
             is JcRawCatchInst,
@@ -174,20 +181,29 @@ class JcRuntimeConcolicInstrumenter(
     }
 
     private fun getOnExitFunctionInstructions() = buildList {
-        add(JcRawAssignInst(owner,
-            JcRawArrayAccess(argumentsFlagsStack, stackPointer, byteArray),
-            JcRawNull()
-        ))
+        add(
+            JcRawAssignInst(
+                owner,
+                JcRawArrayAccess(argumentsFlagsStack, stackPointer, byteArray),
+                JcRawNull()
+            )
+        )
 
-        add(JcRawAssignInst(owner,
-            JcRawArrayAccess(localVariablesFlagsStack, stackPointer, byteArray),
-            JcRawNull()
-        ))
+        add(
+            JcRawAssignInst(
+                owner,
+                JcRawArrayAccess(localVariablesFlagsStack, stackPointer, byteArray),
+                JcRawNull()
+            )
+        )
 
-        add(JcRawAssignInst(owner,
-            stackPointer,
-            JcRawSubExpr(int, stackPointer, JcRawInt(1))
-        ))
+        add(
+            JcRawAssignInst(
+                owner,
+                stackPointer,
+                JcRawSubExpr(int, stackPointer, JcRawInt(1))
+            )
+        )
     }
 
     private fun createAssignToHeapObjectDescriptorInstructions(
@@ -195,14 +211,16 @@ class JcRuntimeConcolicInstrumenter(
         inhabitantId: JcRawValue,
         flags: JcRawValue
     ): List<JcRawInst> = buildList {
-        val objectDescriptorLocalVar = newLocalVar(objectType, JcRawVirtualCallExpr(
-            identityHashMap,
-            "get",
-            listOf(objectType),
-            objectType,
-            heapFlags,
-            listOf(receiver)
-        ))
+        val objectDescriptorLocalVar = newLocalVar(
+            objectType, JcRawVirtualCallExpr(
+                identityHashMap,
+                "get",
+                listOf(objectType),
+                objectType,
+                heapFlags,
+                listOf(receiver)
+            )
+        )
 
         val newObjectDescriptorLocalVar = newLocalVar(heapObjectDescriptor)
         val endLabel = newLabelName()
@@ -212,43 +230,61 @@ class JcRuntimeConcolicInstrumenter(
                 add(JcRawGotoInst(owner, JcRawLabelRef(endLabel)))
             }
 
-            add(JcRawAssignInst(owner,
-                newObjectDescriptorLocalVar,
-                JcRawNewExpr(heapObjectDescriptor)
-            ))
+            add(
+                JcRawAssignInst(
+                    owner,
+                    newObjectDescriptorLocalVar,
+                    JcRawNewExpr(heapObjectDescriptor)
+                )
+            )
 
-            add(JcRawCallInst(owner, JcRawSpecialCallExpr(
-                heapObjectDescriptor,
-                "<init>",
-                listOf(),
-                void,
-                newObjectDescriptorLocalVar,
-                listOf()
-            )))
+            add(
+                JcRawCallInst(
+                    owner, JcRawSpecialCallExpr(
+                        heapObjectDescriptor,
+                        "<init>",
+                        listOf(),
+                        void,
+                        newObjectDescriptorLocalVar,
+                        listOf()
+                    )
+                )
+            )
         } `else` {
-            add(JcRawAssignInst(owner,
-                newObjectDescriptorLocalVar,
-                JcRawCastExpr(heapObjectDescriptor, objectDescriptorLocalVar)
-            ))
+            add(
+                JcRawAssignInst(
+                    owner,
+                    newObjectDescriptorLocalVar,
+                    JcRawCastExpr(heapObjectDescriptor, objectDescriptorLocalVar)
+                )
+            )
         }
 
-        add(JcRawCallInst(owner, JcRawVirtualCallExpr(
-            heapObjectDescriptor,
-            "addFlags",
-            listOf(int, byte),
-            void,
-            newObjectDescriptorLocalVar,
-            listOf(inhabitantId, flags)
-        )))
+        add(
+            JcRawCallInst(
+                owner, JcRawVirtualCallExpr(
+                    heapObjectDescriptor,
+                    "addFlags",
+                    listOf(int, byte),
+                    void,
+                    newObjectDescriptorLocalVar,
+                    listOf(inhabitantId, flags)
+                )
+            )
+        )
 
-        add(JcRawCallInst(owner, JcRawVirtualCallExpr(
-            identityHashMap,
-            "put",
-            listOf(objectType, objectType),
-            void,
-            heapFlags,
-            listOf(receiver, newObjectDescriptorLocalVar)
-        )))
+        add(
+            JcRawCallInst(
+                owner, JcRawVirtualCallExpr(
+                    identityHashMap,
+                    "put",
+                    listOf(objectType, objectType),
+                    void,
+                    heapFlags,
+                    listOf(receiver, newObjectDescriptorLocalVar)
+                )
+            )
+        )
 
         add(JcRawLabelInst(owner, endLabel))
     }
@@ -267,7 +303,8 @@ class JcRuntimeConcolicInstrumenter(
             .maxOfOrNull { it.index }
             ?.let { it + 1 } ?: 0
 
-        val incrementStackPointer = JcRawAssignInst(owner,
+        val incrementStackPointer = JcRawAssignInst(
+            owner,
             stackPointer,
             JcRawAddExpr(int, stackPointer, JcRawInt(1))
         )
@@ -276,7 +313,8 @@ class JcRuntimeConcolicInstrumenter(
         instrumentedInstructionsList.insertBefore(firstMethodInstruction, incrementStackPointer)
 
         if (localVariablesNum != 0) {
-            val variablesStackFrameAllocation = JcRawAssignInst(owner,
+            val variablesStackFrameAllocation = JcRawAssignInst(
+                owner,
                 JcRawArrayAccess(localVariablesFlagsStack, stackPointer, byteArray),
                 JcRawNewArrayExpr(byte, JcRawInt(localVariablesNum))
             )
@@ -293,7 +331,7 @@ class JcRuntimeConcolicInstrumenter(
                 JcRawLabelRef(endLabel)
             )
             val handlerLabel = newLabelName()
-            val catchVar = creatLocalVar(throwable)
+            val catchVar = createLocalVar(throwable)
 
             val exceptionsHandler = buildList {
                 add(JcRawLabelInst(owner, handlerLabel))
@@ -309,7 +347,7 @@ class JcRuntimeConcolicInstrumenter(
     private inner class OperandsProcessor(private val encodedInst: Long) {
 
         private var concreteArgumentIndex = 0
-        private var expressionFlagsBuffer: JcRawLocalVar? =  null
+        private var expressionFlagsBuffer: JcRawLocalVar? = null
         private lateinit var instructionInfoLocalVar: JcRawLocalVar
 
         fun getProcessOperandsInstructions(
@@ -318,16 +356,19 @@ class JcRuntimeConcolicInstrumenter(
             flagsBufferCallback: (MutableList<JcRawInst>.(JcRawValue) -> Unit)? = null
         ): List<JcRawInst> = buildList {
             instructionInfoLocalVar = newLocalVar(instructionInfo, JcRawNewExpr(instructionInfo))
-            add(JcRawCallInst(owner,
-                JcRawSpecialCallExpr(
-                    instructionInfo,
-                    "<init>",
-                    listOf(long),
-                    void,
-                    instructionInfoLocalVar,
-                    listOf(JcRawLong(encodedInst))
+            add(
+                JcRawCallInst(
+                    owner,
+                    JcRawSpecialCallExpr(
+                        instructionInfo,
+                        "<init>",
+                        listOf(long),
+                        void,
+                        instructionInfoLocalVar,
+                        listOf(JcRawLong(encodedInst))
+                    )
                 )
-            ))
+            )
 
             operands.forEach { processExpression(it) }
 
@@ -335,35 +376,53 @@ class JcRuntimeConcolicInstrumenter(
                 return listOf()
             }
 
-            val bitCheckLocalVar = newLocalVar(byte,
+            val bitCheckLocalVar = newLocalVar(
+                byte,
                 JcRawAndExpr(byte, expressionFlagsBuffer!!, JcRawByte(1))
             )
             val lengthLocalVar = newLocalVar(int)
 
             `if`(JcRawNeqExpr(boolean, bitCheckLocalVar, JcRawByte(0))) {
-                add(JcRawAssignInst(owner,
-                    tracePointer,
-                    JcRawAddExpr(int, tracePointer, JcRawInt(1))
-                ))
-                add(JcRawAssignInst(owner,
-                    lengthLocalVar,
-                    JcRawLengthExpr(int, symbolicInstructionsTrace)
-                ))
+                add(
+                    JcRawAssignInst(
+                        owner,
+                        tracePointer,
+                        JcRawAddExpr(int, tracePointer, JcRawInt(1))
+                    )
+                )
+                add(
+                    JcRawAssignInst(
+                        owner,
+                        lengthLocalVar,
+                        JcRawLengthExpr(int, symbolicInstructionsTrace)
+                    )
+                )
                 `if`(JcRawGeExpr(boolean, tracePointer, lengthLocalVar)) {
                     add(concolicInfoHelper.createResizeSymbolicInstructionsTraceMethodCall())
                 }
-                add(JcRawAssignInst(owner,
-                    JcRawArrayAccess(symbolicInstructionsTrace, tracePointer, instructionInfo),
-                    instructionInfoLocalVar
-                ))
+                add(
+                    JcRawAssignInst(
+                        owner,
+                        JcRawArrayAccess(symbolicInstructionsTrace, tracePointer, instructionInfo),
+                        instructionInfoLocalVar
+                    )
+                )
                 if (inst is JcRawIfInst) {
                     val castedExpr = newLocalVar(objectType)
                     `if`(inst.condition) {
-                        add(JcRawAssignInst(owner, castedExpr,
-                            concolicInfoHelper.createBoxValueCall(JcRawBool(true))!!))
+                        add(
+                            JcRawAssignInst(
+                                owner, castedExpr,
+                                concolicInfoHelper.createBoxValueCall(JcRawBool(true))!!
+                            )
+                        )
                     } `else` {
-                        add(JcRawAssignInst(owner, castedExpr,
-                            concolicInfoHelper.createBoxValueCall(JcRawBool(false))!!))
+                        add(
+                            JcRawAssignInst(
+                                owner, castedExpr,
+                                concolicInfoHelper.createBoxValueCall(JcRawBool(false))!!
+                            )
+                        )
                     }
                     add(
                         JcRawCallInst(
@@ -377,16 +436,33 @@ class JcRuntimeConcolicInstrumenter(
                             )
                         )
                     )
+                    add(
+                        JcRawCallInst(
+                            owner, JcRawStaticCallExpr(
+                                declaringClass = TypeNameImpl.fromTypeName(ConcolicHelper::class.java.typeName),
+                                methodName = ConcolicHelper::chooseBranch.javaName,
+                                argumentTypes = listOf(instructionInfo),
+                                returnType = void,
+                                args = listOf(instructionInfoLocalVar)
+                            )
+                        )
+                    )
                 } else if (inst is JcRawSwitchInst) {
-                    val saveBranchSwitch = JcRawSwitchInst(owner, inst.key,
-                        inst.branches.mapValues { JcRawLabelRef(newLabelName()) }, JcRawLabelRef(newLabelName()))
+                    val saveBranchSwitch = JcRawSwitchInst(
+                        owner, inst.key,
+                        inst.branches.mapValues { JcRawLabelRef(newLabelName()) }, JcRawLabelRef(newLabelName())
+                    )
                     val castedExpr = newLocalVar(objectType)
                     add(saveBranchSwitch)
                     val exitLabel = newLabelName()
                     for ((i, label) in (saveBranchSwitch.branches.values + saveBranchSwitch.default).withIndex()) {
                         add(JcRawLabelInst(owner, label.name))
-                        add(JcRawAssignInst(owner, castedExpr,
-                            concolicInfoHelper.createBoxValueCall(JcRawInt(i))!!))
+                        add(
+                            JcRawAssignInst(
+                                owner, castedExpr,
+                                concolicInfoHelper.createBoxValueCall(JcRawInt(i))!!
+                            )
+                        )
                         add(JcRawGotoInst(owner, JcRawLabelRef(exitLabel)))
                     }
                     add(JcRawLabelInst(owner, exitLabel))
@@ -399,6 +475,41 @@ class JcRuntimeConcolicInstrumenter(
                                 void,
                                 instructionInfoLocalVar,
                                 listOf(JcRawInt(-1), castedExpr)
+                            )
+                        )
+                    )
+                    add(
+                        JcRawCallInst(
+                            owner, JcRawStaticCallExpr(
+                                declaringClass = TypeNameImpl.fromTypeName(ConcolicHelper::class.java.typeName),
+                                methodName = ConcolicHelper::chooseBranch.javaName,
+                                argumentTypes = listOf(instructionInfo),
+                                returnType = TypeNameImpl.fromTypeName(PredefinedPrimitives.Void),
+                                args = listOf(instructionInfoLocalVar)
+                            )
+                        )
+                    )
+                } else/* if (inst is JcRawReturnInst) {
+                    add(
+                        JcRawCallInst(
+                            owner, JcRawStaticCallExpr(
+                                declaringClass = TypeNameImpl.fromTypeName(ConcolicHelper::class.java.typeName),
+                                methodName = ConcolicHelper::chooseBranch.javaName,
+                                argumentTypes = listOf(instructionInfo),
+                                returnType = TypeNameImpl.fromTypeName(PredefinedPrimitives.Void),
+                                args = listOf(instructionInfoLocalVar)
+                            )
+                        )
+                    )
+                } else*/ {
+                    add(
+                        JcRawCallInst(
+                            owner, JcRawStaticCallExpr(
+                                declaringClass = TypeNameImpl.fromTypeName(ConcolicHelper::class.java.typeName),
+                                methodName = ConcolicHelper::step.javaName,
+                                argumentTypes = listOf(instructionInfo),
+                                returnType = TypeNameImpl.fromTypeName(PredefinedPrimitives.Void),
+                                args = listOf(instructionInfoLocalVar)
                             )
                         )
                     )
@@ -453,10 +564,13 @@ class JcRuntimeConcolicInstrumenter(
                         val lengthLocalVar = newLocalVar(int, JcRawLengthExpr(int, staticFieldsFlags))
 
                         `if`(JcRawLtExpr(boolean, expr.fieldId, lengthLocalVar)) {
-                            add(JcRawAssignInst(owner,
-                                flags,
-                                JcRawArrayAccess(staticFieldsFlags, expr.fieldId, byte)
-                            ))
+                            add(
+                                JcRawAssignInst(
+                                    owner,
+                                    flags,
+                                    JcRawArrayAccess(staticFieldsFlags, expr.fieldId, byte)
+                                )
+                            )
                         } `else` {
                             add(JcRawAssignInst(owner, flags, JcRawByte(0)))
                         }
@@ -469,7 +583,8 @@ class JcRuntimeConcolicInstrumenter(
                 }
 
                 is JcRawArgument -> {
-                    val flags = newLocalVar(byte,
+                    val flags = newLocalVar(
+                        byte,
                         JcRawArrayAccess(
                             JcRawArrayAccess(argumentsFlagsStack, stackPointer, byteArray),
                             JcRawInt(expr.index), byte
@@ -480,7 +595,8 @@ class JcRuntimeConcolicInstrumenter(
                 }
 
                 is JcRawLocalVar -> {
-                    val flags = newLocalVar(byte,
+                    val flags = newLocalVar(
+                        byte,
                         JcRawArrayAccess(
                             JcRawArrayAccess(localVariablesFlagsStack, stackPointer, byteArray),
                             JcRawInt(expr.index), byte
@@ -496,7 +612,9 @@ class JcRuntimeConcolicInstrumenter(
                     addProcessOperandInstructions(expr, flags, isCallReceiver, callParameterIndex)
                 }
 
-                is JcRawConstant, is JcRawNewExpr -> { concreteArgumentIndex++ }
+                is JcRawConstant, is JcRawNewExpr -> {
+                    concreteArgumentIndex++
+                }
             }
         }
 
@@ -505,31 +623,36 @@ class JcRuntimeConcolicInstrumenter(
             inhabitantId: JcRawValue,
             flags: JcRawValue
         ) {
-            val objectDescriptorLocalVar = newLocalVar(objectType, JcRawVirtualCallExpr(
-                identityHashMap,
-                "get",
-                listOf(objectType),
-                objectType,
-                heapFlags,
-                listOf(instance)
-            ))
+            val objectDescriptorLocalVar = newLocalVar(
+                objectType, JcRawVirtualCallExpr(
+                    identityHashMap,
+                    "get",
+                    listOf(objectType),
+                    objectType,
+                    heapFlags,
+                    listOf(instance)
+                )
+            )
 
             `if`(JcRawNeqExpr(boolean, objectDescriptorLocalVar, JcRawNull())) {
                 val castedDescriptor = newLocalVar(
                     heapObjectDescriptor,
                     JcRawCastExpr(heapObjectDescriptor, objectDescriptorLocalVar)
                 )
-                add(JcRawAssignInst(owner,
-                    flags,
-                    JcRawVirtualCallExpr(
-                        heapObjectDescriptor,
-                        "getFlags",
-                        listOf(int),
-                        byte,
-                        castedDescriptor,
-                        listOf(inhabitantId)
+                add(
+                    JcRawAssignInst(
+                        owner,
+                        flags,
+                        JcRawVirtualCallExpr(
+                            heapObjectDescriptor,
+                            "getFlags",
+                            listOf(int),
+                            byte,
+                            castedDescriptor,
+                            listOf(inhabitantId)
+                        )
                     )
-                ))
+                )
             } `else` {
                 add(JcRawAssignInst(owner, flags, expressionFlagsBuffer!!))
             }
@@ -538,7 +661,8 @@ class JcRuntimeConcolicInstrumenter(
         private fun MutableList<JcRawInst>.addProcessOperandInstructions(
             expr: JcRawValue, flags: JcRawValue, isCallReceiver: Boolean, callParameterIndex: Int
         ) {
-            val newBuffer = newLocalVar(byte,
+            val newBuffer = newLocalVar(
+                byte,
                 expressionFlagsBuffer?.let { JcRawOrExpr(byte, it, flags) } ?: flags
             )
             expressionFlagsBuffer = newBuffer
@@ -549,39 +673,50 @@ class JcRuntimeConcolicInstrumenter(
                 val castedExpr = newLocalVar(objectType)
 
                 if (expr.typeName.isPrimitive) {
-                    add(concolicInfoHelper.createBoxValueCall(expr)
-                        ?.let { JcRawAssignInst(owner, castedExpr, it) }!!
+                    add(
+                        concolicInfoHelper.createBoxValueCall(expr)
+                            ?.let { JcRawAssignInst(owner, castedExpr, it) }!!
                     )
                 }
 
-                add(JcRawCallInst(
-                    owner, JcRawVirtualCallExpr(
-                        instructionInfo,
-                        "addConcreteArgument",
-                        listOf(int, objectType),
-                        void,
-                        instructionInfoLocalVar,
-                        listOf(JcRawInt(concreteArgumentIndex++),
-                            if (expr.typeName.isPrimitive) castedExpr else expr)
+                add(
+                    JcRawCallInst(
+                        owner, JcRawVirtualCallExpr(
+                            instructionInfo,
+                            "addConcreteArgument",
+                            listOf(int, objectType),
+                            void,
+                            instructionInfoLocalVar,
+                            listOf(
+                                JcRawInt(concreteArgumentIndex++),
+                                if (expr.typeName.isPrimitive) castedExpr else expr
+                            )
+                        )
                     )
-                ))
+                )
             }
 
             if (isCallReceiver || callParameterIndex != -1) {
                 val nextStackPointer = newLocalVar(int, JcRawAddExpr(int, stackPointer, JcRawInt(1)))
 
                 if (isCallReceiver) {
-                    add(JcRawAssignInst(owner,
-                        JcRawArrayAccess(thisFlagsStack, nextStackPointer, byte),
-                        flags
-                    ))
+                    add(
+                        JcRawAssignInst(
+                            owner,
+                            JcRawArrayAccess(thisFlagsStack, nextStackPointer, byte),
+                            flags
+                        )
+                    )
                 } else {
-                    add(JcRawAssignInst(owner,
-                        JcRawArrayAccess(
-                            JcRawArrayAccess(argumentsFlagsStack, nextStackPointer, byteArray),
-                            JcRawInt(callParameterIndex), byte
-                        ), flags
-                    ))
+                    add(
+                        JcRawAssignInst(
+                            owner,
+                            JcRawArrayAccess(
+                                JcRawArrayAccess(argumentsFlagsStack, nextStackPointer, byteArray),
+                                JcRawInt(callParameterIndex), byte
+                            ), flags
+                        )
+                    )
                 }
             }
         }
@@ -599,10 +734,13 @@ class JcRuntimeConcolicInstrumenter(
             `if`(JcRawGeExpr(boolean, incrementedStackPointerLocalVar, stackLengthLocalVar)) {
                 add(concolicInfoHelper.createResizeFlagsStacksMethodCall())
             }
-            add(JcRawAssignInst(owner,
-                JcRawArrayAccess(argumentsFlagsStack, incrementedStackPointerLocalVar, byteArray),
-                JcRawNewArrayExpr(byte, JcRawInt(argumentsNum))
-            ))
+            add(
+                JcRawAssignInst(
+                    owner,
+                    JcRawArrayAccess(argumentsFlagsStack, incrementedStackPointerLocalVar, byteArray),
+                    JcRawNewArrayExpr(byte, JcRawInt(argumentsNum))
+                )
+            )
         }
     }
 
@@ -613,9 +751,11 @@ class JcRuntimeConcolicInstrumenter(
         val firstLabelName = newLabelName()
         val secondLabelName = newLabelName()
 
-        add(JcRawIfInst(
-            owner, condition, JcRawLabelRef(firstLabelName), JcRawLabelRef(secondLabelName)
-        ))
+        add(
+            JcRawIfInst(
+                owner, condition, JcRawLabelRef(firstLabelName), JcRawLabelRef(secondLabelName)
+            )
+        )
 
         add(JcRawLabelInst(owner, firstLabelName))
         then()
@@ -636,13 +776,14 @@ class JcRuntimeConcolicInstrumenter(
 
     private var localVariablesNum = 0
     private fun MutableList<JcRawInst>.newLocalVar(type: TypeName, initialValue: JcRawExpr? = null): JcRawLocalVar {
-        val localVar = creatLocalVar(type)
+        val localVar = createLocalVar(type)
         if (initialValue != null) {
             add(JcRawAssignInst(owner, localVar, initialValue))
         }
         return localVar
     }
-    private fun creatLocalVar(type: TypeName) = localVariablesNum++.let { JcRawLocalVar(it, "%${it}", type) }
+
+    private fun createLocalVar(type: TypeName) = localVariablesNum++.let { JcRawLocalVar(it, "%${it}", type) }
 
     private var labelsNum = 0
     private fun newLabelName() = "#${labelsNum++}"

@@ -9,7 +9,7 @@ object InstrumentationModuleConstants {
     //Timeout for test execution
     val testExecutionTimeout = 20.seconds
     //Timeout for method execution
-    val methodExecutionTimeout = 10 .seconds
+    val methodExecutionTimeout = 1000000000000.seconds
     //Timeout for executor process waiting (should be in seconds)
     const val concreteExecutorProcessTimeout = 120
     //If something gone wrong with RD

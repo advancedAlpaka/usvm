@@ -37,7 +37,27 @@ class UTestExecutorTests {
         val jcClass = jcClasspath.findClass<ConcolicTests>()
         val jcMethod = jcClass.declaredMethods.find { it.name == "lolol" }!!
 
-        val result = JvmConcolicRunner(testJarPath, jcMethod).use { it.runAnalysis() }
+        val res = JvmConcolicRunner(testJarPath, jcMethod).use { it.runTargetedAnalysis() }
+
+        println("Hi from end!")
+    }
+
+    @Test
+    fun `if test 1`() {
+        val jcClass = jcClasspath.findClass<ConcolicTests>()
+        val jcMethod = jcClass.declaredMethods.find { it.name == "lol" }!!
+
+        val res = JvmConcolicRunner(testJarPath, jcMethod).use { it.runTargetedAnalysis() }
+
+        println("Hi from end!")
+    }
+
+    @Test
+    fun `if test 2`() {
+        val jcClass = jcClasspath.findClass<ConcolicTests>()
+        val jcMethod = jcClass.declaredMethods.find { it.name == "lolD" }!!
+
+        val res = JvmConcolicRunner(testJarPath, jcMethod).use { it.runTargetedAnalysis() }
 
         println("Hi from end!")
     }

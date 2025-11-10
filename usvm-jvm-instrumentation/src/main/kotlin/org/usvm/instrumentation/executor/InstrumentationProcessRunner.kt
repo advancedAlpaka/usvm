@@ -46,7 +46,7 @@ class InstrumentationProcessRunner(
             InstrumentedProcess::class.qualifiedName ?: error("Can't find instumented process")
         listOf(pathToJava.resolve("bin${File.separatorChar}${osSpecificJavaExecutable()}").toString()) +
                 listOf("-ea") +
-                listOf("-javaagent:${InstrumentationModuleConstants.pathToUsvmInstrumentationJar}=$instrumentationClassNameFactoryName") +
+                //listOf("-javaagent:${InstrumentationModuleConstants.pathToUsvmInstrumentationJar}=$instrumentationClassNameFactoryName") +
                 memoryLimit +
                 javaVersionSpecificArguments +
                 listOf("-classpath", usvmClasspath) +

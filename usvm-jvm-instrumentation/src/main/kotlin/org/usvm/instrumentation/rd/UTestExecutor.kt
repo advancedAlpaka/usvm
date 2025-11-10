@@ -1,11 +1,11 @@
 package org.usvm.instrumentation.rd
 
 import org.jacodb.api.jvm.JcClasspath
-import org.jacodb.api.jvm.JcField
 import org.jacodb.api.jvm.ext.findClass
 import org.jacodb.api.jvm.ext.toType
 import org.usvm.instrumentation.classloader.JcConcreteMemoryClassLoader
 import org.usvm.instrumentation.classloader.MetaClassLoader
+import org.usvm.instrumentation.collector.trace.ConcolicCollector
 import org.usvm.instrumentation.collector.trace.MockCollector
 import org.usvm.instrumentation.instrumentation.*
 import org.usvm.instrumentation.mock.MockHelper
@@ -14,15 +14,17 @@ import org.usvm.instrumentation.testcase.api.*
 import org.usvm.instrumentation.testcase.descriptor.*
 import org.usvm.instrumentation.testcase.executor.UTestExpressionExecutor
 import org.usvm.instrumentation.util.InstrumentationModuleConstants
-import org.usvm.instrumentation.util.URLClassPathLoader
 import java.lang.Exception
+import java.util.function.Function
 
 class UTestExecutor(
     private val jcClasspath: JcClasspath,
-    private val tracer: Tracer<*>
+    private val tracer: Tracer<*>,
+    val stepAction: (InstructionInfo?) -> Unit = {},
+    val chooseBranchAction: (InstructionInfo?) -> Unit = {}
 ) {
 
-    private var metaClassLoader : MetaClassLoader = createMetaClassLoader()
+    var metaClassLoader : MetaClassLoader = createMetaClassLoader()
     private var initStateDescriptorBuilder = Value2DescriptorConverter(
         workerClassLoader = metaClassLoader,
         previousState = null
@@ -38,6 +40,9 @@ class UTestExecutor(
 
     private fun createMetaClassLoader() : MetaClassLoader {
         JcConcreteMemoryClassLoader.cp = jcClasspath
+        JcConcreteMemoryClassLoader.stepAction = stepAction
+        JcConcreteMemoryClassLoader.chooseBranchAction = chooseBranchAction
+
         return JcConcreteMemoryClassLoader
     }
 
@@ -59,7 +64,10 @@ class UTestExecutor(
         val executor = UTestExpressionExecutor(metaClassLoader, mockHelper)
         val initStmts = (uTest.initStatements + listOf(callMethodExpr.instance) + callMethodExpr.args).filterNotNull()
         executor.executeUTestInsts(initStmts)
-            ?.onFailure {
+            ?.onFailure {;
+                System.err.println("PIZDA 1")
+                it.printStackTrace(System.err)
+
                 return UTestExecutionInitFailedResult(
                     cause = buildExceptionDescriptor(
                         builder = initStateDescriptorBuilder,
@@ -77,7 +85,10 @@ class UTestExecutor(
         )
 
         val methodInvocationResult =
-            executor.executeUTestInst(callMethodExpr)
+            executor.executeUTestInst(callMethodExpr).onFailure {
+                System.err.println("PIZDA 2")
+                it.printStackTrace(System.err)
+            }
         val resultStateDescriptorBuilder =
             Value2DescriptorConverter(metaClassLoader, initStateDescriptorBuilder)
         val unpackedInvocationResult =
@@ -126,7 +137,7 @@ class UTestExecutor(
         if (this !is ConcolicTrace) return null
 
         return symbolicInstructionsTrace.map {
-            it.concreteArguments.entries.associate { (k, v) -> k to
+            it.concreteArguments.associate { (k, v) -> k to
                     descriptorBuilder.buildDescriptorResultFromAny(v, null).getOrThrow()
             }
         }

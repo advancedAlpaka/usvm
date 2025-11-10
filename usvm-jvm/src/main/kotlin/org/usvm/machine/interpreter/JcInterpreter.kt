@@ -655,7 +655,7 @@ class JcInterpreter(
         }
     }
 
-    private fun exprResolverWithScope(scope: JcStepScope, stmt: JcInst?) =
+    fun exprResolverWithScope(scope: JcStepScope, stmt: JcInst?, definedConcreteVariables: Map<Int, UTestValueDescriptor>? = null) =
         JcExprResolver(
             ctx,
             scope,
@@ -664,14 +664,14 @@ class JcInterpreter(
             ::typeInstanceAllocator,
             ::stringConstantAllocator,
             ::classInitializerAlwaysAnalysisRequiredForType,
-            getConcreteMap(stmt),
+            getConcreteMap(stmt, definedConcreteVariables),
             objectAllocatedRefs
         ) { scope.arrayAllocator(it) }
 
-    private fun getConcreteMap(stmt: JcInst?): Map<JcExpr, UTestValueDescriptor> {
+    private fun getConcreteMap(stmt: JcInst?, definedConcreteVariables: Map<Int, UTestValueDescriptor>? = null): Map<JcExpr, UTestValueDescriptor> {
         stmt ?: return emptyMap()
         val indexOfStmt = concolicTrace?.indexOf(stmt)
-        if (concreteValues == null || indexOfStmt == null || indexOfStmt == -1) {
+        if ((concreteValues == null && definedConcreteVariables == null) || indexOfStmt == null || indexOfStmt == -1) {
             return emptyMap()
         }
 
@@ -703,7 +703,7 @@ class JcInterpreter(
 
         val flattenExpressions =
             (if (stmt is JcAssignInst) listOf(stmt.rhv) else stmt.operands).flatMap { flatExpressions(it) }
-        return concreteValues[indexOfStmt].filter { it.key != -1 }.mapKeys { flattenExpressions[it.key]!! }
+        return (concreteValues?.get(indexOfStmt) ?: definedConcreteVariables)!!.filter { it.key != -1 }.mapKeys { flattenExpressions[it.key]!! }
     }
 
     private val localVarToIdx = mutableMapOf<JcMethod, MutableMap<String, Int>>() // (method, localName) -> idx

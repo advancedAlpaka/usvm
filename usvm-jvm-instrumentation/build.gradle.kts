@@ -29,6 +29,7 @@ sourceSets {
 
     test {
         compileClasspath += samples.output
+        compileClasspath += collectors.output
         runtimeClasspath += samples.output
         runtimeClasspath += collectors.output
     }
@@ -67,6 +68,7 @@ dependencies {
     rdgenModelsCompileClasspath(Libs.rd_gen)
 
     implementation("com.jetbrains.rd:rd-gen:${Versions.rd}")
+    //implementation(project(":usvm-jvm"))
 
     testImplementation(project(":usvm-core"))
     testImplementation(project(":usvm-jvm"))

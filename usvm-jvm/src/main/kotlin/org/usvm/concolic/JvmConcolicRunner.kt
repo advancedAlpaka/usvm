@@ -14,17 +14,12 @@ import org.usvm.PathSelectionStrategy
 import org.usvm.UMachineOptions
 import org.usvm.api.targets.JcTarget
 import org.usvm.api.util.JcTestStateResolver
-import org.usvm.instrumentation.classloader.JcConcreteMemoryClassLoader
-import org.usvm.instrumentation.executor.UTestConcreteExecutor
-import org.usvm.instrumentation.generated.models.SerializedUTest
 import org.usvm.instrumentation.instrumentation.JcConcolicTracer
-import org.usvm.instrumentation.instrumentation.JcRuntimeConcolicInstrumenterFactory
 import org.usvm.instrumentation.rd.UTestExecutor
 import org.usvm.instrumentation.testcase.UTest
 import org.usvm.instrumentation.testcase.api.*
 import org.usvm.instrumentation.testcase.descriptor.UTestValueDescriptor
 import org.usvm.instrumentation.util.InstrumentationModuleConstants
-import org.usvm.instrumentation.util.URLClassPathLoader
 import org.usvm.instrumentation.util.getTypename
 import org.usvm.instrumentation.util.toJcClass
 import org.usvm.instrumentation.util.toJcType
@@ -32,7 +27,6 @@ import org.usvm.machine.JcApplicationGraph
 import org.usvm.machine.JcMachine
 import org.usvm.machine.state.JcState
 import org.usvm.ps.BfsPathSelector
-import org.usvm.util.JcTestExecutorDecoderApi
 import org.usvm.util.MemoryScope
 import java.io.File
 
@@ -54,8 +48,11 @@ class JvmConcolicRunner(jarPaths: List<String>, private val method: JcMethod) : 
             applicationGraph = JcApplicationGraph(classpath)
             concreteExecutor = UTestExecutor(
                 classpath,
-                JcConcolicTracer
+                JcConcolicTracer,
+                ConcolicIntegrator.stepAction,
+                ConcolicIntegrator.chooseBranchAction
             )
+            ConcolicIntegrator.init(method, concreteExecutor.metaClassLoader)
         }
     }
 
@@ -74,6 +71,12 @@ class JvmConcolicRunner(jarPaths: List<String>, private val method: JcMethod) : 
 
         ConcolicResult(concreteRuns, symbolicExecutions)
     }
+
+    fun runTargetedAnalysis() = runBlocking {
+        val test = generateUTest()!!
+        concreteExecutor.executeUTest(test)
+    }
+
 
     private fun executeConcolic(
         test: UTest,

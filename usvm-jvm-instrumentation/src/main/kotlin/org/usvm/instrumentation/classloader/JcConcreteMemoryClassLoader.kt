@@ -3,22 +3,31 @@ package org.usvm.instrumentation.classloader
 import org.jacodb.api.jvm.JcClassOrInterface
 import org.jacodb.api.jvm.JcClasspath
 import org.jacodb.api.jvm.ext.allSuperHierarchySequence
-import org.jacodb.impl.cfg.MethodNodeBuilder
 import org.jacodb.impl.features.classpaths.JcUnknownClass
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
 import org.usvm.instrumentation.ConcolicHelper
-import org.usvm.instrumentation.instrumentation.JcInstrumenterFactory
+import org.usvm.instrumentation.collector.trace.ConcolicCollector
+import org.usvm.instrumentation.instrumentation.InstructionInfo
+import org.usvm.instrumentation.instrumentation.JcConcolicTracer
+import org.usvm.instrumentation.collector.trace.ConcolicCollector.InstructionInfo as InstructionInfoApi
 import org.usvm.instrumentation.instrumentation.JcRuntimeConcolicInstrumenterFactory
-import org.usvm.instrumentation.util.*
+import org.usvm.instrumentation.util.javaName
+import org.usvm.instrumentation.util.setStaticFieldValue
+import org.usvm.instrumentation.util.staticFields
+import org.usvm.instrumentation.util.toByteArray
 import java.io.File
 import java.net.URI
 import java.net.URL
 import java.nio.ByteBuffer
+import java.nio.file.StandardOpenOption
 import java.security.CodeSource
 import java.util.*
 import java.util.jar.JarEntry
 import java.util.jar.JarFile
+import kotlin.io.path.Path
+import kotlin.io.path.createParentDirectories
+import kotlin.io.path.writeBytes
 
 /**
  * Loads known classes using [ClassLoader.getSystemClassLoader], or defines them using bytecode from jacodb if they are unknown.
@@ -33,7 +42,7 @@ object JcConcreteMemoryClassLoader : MetaClassLoader(getSystemClassLoader()) {
         get() = cp
 
     override fun redefineClass(jClass: Class<*>, asmBody: ClassNode) {
-
+        TODO()
     }
 
     override fun defineClass(name: String, classNode: ClassNode) =
@@ -61,22 +70,27 @@ object JcConcreteMemoryClassLoader : MetaClassLoader(getSystemClassLoader()) {
                 || !single && entryName.contains(name)
     }
 
-    private val beforeIfAction: java.util.function.Function<String, Void?> =
-        java.util.function.Function { obj: String ->
-            println("!!!Hi from beforeIfAction!!!")
-            println("I am executing in ${Thread.currentThread().name}")
-            println("Info from executor: $obj")
-            return@Function null
-        }
+    lateinit var stepAction: (InstructionInfo?) -> Unit
+    lateinit var chooseBranchAction: (InstructionInfo?) -> Unit
 
     private fun initConcolicHelper(type: Class<*>) {
         check(type.typeName == ConcolicHelper::class.java.typeName)
-
+        println("Called initConcolicHelper")
         type.declaredFields.first().get(null)
         // Initializing static fields
         for (field in type.staticFields) {
             when (field.name) {
-                ConcolicHelper::beforeIfAction.javaName -> field.setStaticFieldValue(beforeIfAction)
+                ConcolicHelper::chooseBranchAction.javaName -> field.setStaticFieldValue(java.util.function.Function<InstructionInfoApi?, Void?> {
+                    println("Called chooseBranch")
+                    val converted = JcConcolicTracer.convertInfo(it)
+                    chooseBranchAction(converted)
+                    return@Function null
+                })
+                ConcolicHelper::stepAction.javaName -> field.setStaticFieldValue(java.util.function.Function<InstructionInfoApi?, Void?> {
+                    val converted = JcConcolicTracer.convertInfo(it)
+                    stepAction(converted)
+                    return@Function null
+                })
             }
         }
     }
@@ -214,7 +228,10 @@ object JcConcreteMemoryClassLoader : MetaClassLoader(getSystemClassLoader()) {
                     return@withAsmNode asmNode.toByteArray(cp)
 
                 val instrumentedClassNode = instrumenter.instrumentClass(asmNode)
-                return@withAsmNode instrumentedClassNode.toByteArray(cp, checkClass = true)
+                return@withAsmNode instrumentedClassNode.toByteArray(cp, checkClass = true)//.also {
+                //    Path("/home/adv-alpaka/IdeaProjects/usvm/hlam/${asmNode.name}.class").also { it.createParentDirectories() }.writeBytes(it,
+                //        StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW)
+                //}
             }
         }
     }
