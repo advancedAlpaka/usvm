@@ -21,7 +21,7 @@ class UTestExecutor(
     private val jcClasspath: JcClasspath,
     private val tracer: Tracer<*>,
     val stepAction: (InstructionInfo?) -> Unit = {},
-    val chooseBranchAction: (InstructionInfo?) -> Unit = {}
+    val chooseBranchAction: (InstructionInfo?) -> Boolean = { false }
 ) {
 
     var metaClassLoader : MetaClassLoader = createMetaClassLoader()
