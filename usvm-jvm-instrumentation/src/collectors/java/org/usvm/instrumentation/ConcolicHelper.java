@@ -4,9 +4,16 @@ import org.usvm.instrumentation.collector.trace.ConcolicCollector.InstructionInf
 
 import java.util.function.Function;
 
+@SuppressWarnings("unused")
 public class ConcolicHelper {
     public static Function<InstructionInfo, Void> stepAction;
-    public static Function<InstructionInfo, Void> chooseBranchAction;
+    public static Function<InstructionInfo, Boolean> chooseBranchAction;
+
+    public static int count = 0;
+
+    private static void breakpoint() {
+        count++;
+    }
 
     public static void step(InstructionInfo info) {
         stepAction.apply(info);
@@ -14,7 +21,10 @@ public class ConcolicHelper {
 
     public static void chooseBranch(InstructionInfo info) {
         System.err.println("CT invoke choose branch");
-        chooseBranchAction.apply(info);
+        Boolean need = chooseBranchAction.apply(info);
+        if(need) {
+            breakpoint();
+        }
     }
 
     static {

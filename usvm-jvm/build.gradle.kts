@@ -189,3 +189,87 @@ publishing {
         }
     }
 }
+
+// --- JVMTI native agent build integration ---
+// This uses CMake located under usvm-jvm/agent to produce a shared library.
+// It expects JAVA_HOME to be set in the environment (Gradle will forward it).
+
+val agentDirFile = project.file("agent")
+val agentBuildDirFile = project.file("agent/build")
+val agentLibRelative = "libs/usvm_jvm_agent"
+
+// Platform-specific file name provider
+fun providerAgentLibName(): Provider<String> = providers.provider {
+    val os = org.gradle.internal.os.OperatingSystem.current()
+    when {
+        os.isWindows -> "${agentLibRelative}.dll"
+        os.isMacOsX -> "${agentLibRelative}.dylib"
+        else -> "${agentLibRelative}.so"
+    }
+}
+
+val cmakeConfigure by tasks.registering(Exec::class) {
+    group = "native"
+    description = "Run CMake configure for JVMTI agent"
+    // workingDir must be a File
+    workingDir = agentDirFile
+    val javaHome = providers.environmentVariable("JAVA_HOME").orNull ?: System.getenv("JAVA_HOME")
+    if (javaHome == null) {
+        throw GradleException("JAVA_HOME must be set to build the native JVMTI agent")
+    }
+    // Create build dir
+    doFirst {
+        agentBuildDirFile.mkdirs()
+    }
+    commandLine(
+        "cmake",
+        "-S",
+        agentDirFile.absolutePath,
+        "-B",
+        agentBuildDirFile.absolutePath,
+        "-DJAVA_HOME=${javaHome}"
+    )
+}
+
+val cmakeBuild by tasks.registering(Exec::class) {
+    group = "native"
+    description = "Build JVMTI agent via CMake"
+    workingDir = agentBuildDirFile
+    dependsOn(cmakeConfigure)
+    commandLine("cmake", "--build", ".", "--config", "Release")
+}
+
+val assembleAgent by tasks.registering(Copy::class) {
+    group = "build"
+    description = "Assemble native JVMTI agent into usvm-jvm build libs"
+    dependsOn(cmakeBuild)
+
+    val libName = providerAgentLibName().get()
+    val sourcePath = agentBuildDirFile.resolve(libName)
+
+    from(sourcePath)
+    into(layout.buildDirectory.dir("libs"))
+}
+
+// Tests will attach the JVMTI agent only if a path is provided via project property
+// -PusvmAgentPath=/full/path/to/libusvm_jvm_agent.so
+// or environment variable USVM_AGENT_PATH
+// Building the native agent is NOT mandatory to run tests.
+val usvmAgentPathProp = providers.gradleProperty("usvmAgentPath").orNull
+val usvmAgentPathEnv = providers.environmentVariable("USVM_AGENT_PATH").orNull
+
+tasks.withType(Test::class.java) {
+    doFirst {
+        val providedPath = usvmAgentPathProp ?: usvmAgentPathEnv
+        if (!providedPath.isNullOrBlank()) {
+            val agentFile = file(providedPath)
+            if (!agentFile.exists()) {
+                throw GradleException("Provided JVMTI agent path does not exist: ${providedPath}")
+            }
+            logger.lifecycle("Attaching JVMTI agent from: ${agentFile.absolutePath}")
+            jvmArgs("-agentpath:${agentFile.absolutePath}")
+        } else {
+            logger.lifecycle("No JVMTI agent path provided (project property 'usvmAgentPath' or env 'USVM_AGENT_PATH'); running tests without agent")
+        }
+    }
+}

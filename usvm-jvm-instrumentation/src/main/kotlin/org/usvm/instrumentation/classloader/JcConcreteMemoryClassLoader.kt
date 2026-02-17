@@ -7,10 +7,8 @@ import org.jacodb.impl.features.classpaths.JcUnknownClass
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
 import org.usvm.instrumentation.ConcolicHelper
-import org.usvm.instrumentation.collector.trace.ConcolicCollector
 import org.usvm.instrumentation.instrumentation.InstructionInfo
 import org.usvm.instrumentation.instrumentation.JcConcolicTracer
-import org.usvm.instrumentation.collector.trace.ConcolicCollector.InstructionInfo as InstructionInfoApi
 import org.usvm.instrumentation.instrumentation.JcRuntimeConcolicInstrumenterFactory
 import org.usvm.instrumentation.util.javaName
 import org.usvm.instrumentation.util.setStaticFieldValue
@@ -20,14 +18,11 @@ import java.io.File
 import java.net.URI
 import java.net.URL
 import java.nio.ByteBuffer
-import java.nio.file.StandardOpenOption
 import java.security.CodeSource
 import java.util.*
 import java.util.jar.JarEntry
 import java.util.jar.JarFile
-import kotlin.io.path.Path
-import kotlin.io.path.createParentDirectories
-import kotlin.io.path.writeBytes
+import org.usvm.instrumentation.collector.trace.ConcolicCollector.InstructionInfo as InstructionInfoApi
 
 /**
  * Loads known classes using [ClassLoader.getSystemClassLoader], or defines them using bytecode from jacodb if they are unknown.
@@ -71,7 +66,7 @@ object JcConcreteMemoryClassLoader : MetaClassLoader(getSystemClassLoader()) {
     }
 
     lateinit var stepAction: (InstructionInfo?) -> Unit
-    lateinit var chooseBranchAction: (InstructionInfo?) -> Unit
+    lateinit var chooseBranchAction: (InstructionInfo?) -> Boolean
 
     private fun initConcolicHelper(type: Class<*>) {
         check(type.typeName == ConcolicHelper::class.java.typeName)
@@ -80,11 +75,10 @@ object JcConcreteMemoryClassLoader : MetaClassLoader(getSystemClassLoader()) {
         // Initializing static fields
         for (field in type.staticFields) {
             when (field.name) {
-                ConcolicHelper::chooseBranchAction.javaName -> field.setStaticFieldValue(java.util.function.Function<InstructionInfoApi?, Void?> {
+                ConcolicHelper::chooseBranchAction.javaName -> field.setStaticFieldValue(java.util.function.Function<InstructionInfoApi?, Boolean?> {
                     println("Called chooseBranch")
                     val converted = JcConcolicTracer.convertInfo(it)
-                    chooseBranchAction(converted)
-                    return@Function null
+                    return@Function chooseBranchAction(converted)
                 })
                 ConcolicHelper::stepAction.javaName -> field.setStaticFieldValue(java.util.function.Function<InstructionInfoApi?, Void?> {
                     val converted = JcConcolicTracer.convertInfo(it)

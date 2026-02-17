@@ -1,26 +1,12 @@
 package org.usvm.concolic
 
 import io.ksmt.utils.asExpr
-import io.ksmt.utils.cast
 import org.jacodb.api.jvm.JcClasspath
 import org.jacodb.api.jvm.JcMethod
 import org.jacodb.api.jvm.JcType
 import org.jacodb.api.jvm.TypeName
-import org.jacodb.api.jvm.cfg.JcBool
-import org.jacodb.api.jvm.cfg.JcByte
-import org.jacodb.api.jvm.cfg.JcCallInst
-import org.jacodb.api.jvm.cfg.JcChar
-import org.jacodb.api.jvm.cfg.JcDouble
-import org.jacodb.api.jvm.cfg.JcFloat
 import org.jacodb.api.jvm.cfg.JcIfInst
-import org.jacodb.api.jvm.cfg.JcInst
-import org.jacodb.api.jvm.cfg.JcInt
-import org.jacodb.api.jvm.cfg.JcLong
-import org.jacodb.api.jvm.cfg.JcRawBool
-import org.jacodb.api.jvm.cfg.JcReturnInst
-import org.jacodb.api.jvm.cfg.JcShort
 import org.jacodb.api.jvm.cfg.JcSwitchInst
-import org.jacodb.api.jvm.cfg.JcValue
 import org.jacodb.api.jvm.ext.boolean
 import org.jacodb.api.jvm.ext.byte
 import org.jacodb.api.jvm.ext.char
@@ -29,15 +15,19 @@ import org.jacodb.api.jvm.ext.float
 import org.jacodb.api.jvm.ext.int
 import org.jacodb.api.jvm.ext.long
 import org.jacodb.api.jvm.ext.short
-import org.jacodb.impl.cfg.JcInstLocationImpl
-import org.jacodb.impl.cfg.JcRawByte
-import org.usvm.*
+import org.usvm.StepScope
+import org.usvm.UMachineOptions
 import org.usvm.instrumentation.classloader.MetaClassLoader
 import org.usvm.instrumentation.instrumentation.InstructionInfo
 import org.usvm.instrumentation.testcase.descriptor.UTestConstantDescriptor
 import org.usvm.instrumentation.testcase.descriptor.Value2DescriptorConverter
 import org.usvm.instrumentation.util.getTypename
-import org.usvm.machine.*
+import org.usvm.machine.JcApplicationGraph
+import org.usvm.machine.JcComponents
+import org.usvm.machine.JcConcreteMethodCallInst
+import org.usvm.machine.JcContext
+import org.usvm.machine.JcMachineOptions
+import org.usvm.machine.JcTypeSystem
 import org.usvm.machine.interpreter.JcInterpreter
 import org.usvm.machine.state.JcState
 import org.usvm.machine.state.lastStmt
@@ -117,7 +107,7 @@ object ConcolicIntegrator {
         }
     }
 
-    var chooseBranchAction : (InstructionInfo?) -> Unit = { info: InstructionInfo? ->
+    var chooseBranchAction : (InstructionInfo?) -> Boolean = { info: InstructionInfo? ->
         info?.let {
             when(info.instruction) {
                 is JcIfInst -> {
@@ -145,7 +135,7 @@ object ConcolicIntegrator {
                     val evaluated = (info.getConcreteValues(resultStateDescriptorBuilder)[-1] as? UTestConstantDescriptor.Boolean)?.value
                     if(evaluated == null){
                         println("PIZDA 3")
-                        return@let
+                        return@let false
                     }
                     println("Condition evaluated to $evaluated")
                     println("We will try to compute model for different branch")
@@ -165,6 +155,7 @@ object ConcolicIntegrator {
                     if(evaluated xor weAreInTrueBranch)
                         state = res.forkedStates.single()
                     state.pathNode = state.pathNode.parent!!
+                    return@let false
                 }
                 is JcSwitchInst -> {
                     var fixedStack = false
@@ -191,14 +182,15 @@ object ConcolicIntegrator {
                     if(chosenBranch.index != state.currentStatement.location.index)
                         state = res.forkedStates.find { it.currentStatement.location.index == chosenBranch.index }!!
                     state.pathNode = state.pathNode.parent!!
+                    return@let false
                 }
                 else -> {
-                    println()
+                    return@let false
                 }
             }
 
 
 
-        }
+        } ?: false
     }
 }
